@@ -1,0 +1,534 @@
+---
+title: "Dashboard_crops"
+author: "Titouan Filloux"
+date: "`r Sys.Date()`"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+runtime: shiny
+---
+
+```{r global, include=FALSE}
+pacman::p_load(
+  rio,             # data import/export     
+  here,            # locate files
+  tidyverse,       # data management and visualization
+  flexdashboard,   # dashboard versions of R Markdown reports
+  shiny,           # interactive figures
+  plotly,           # interactive figures
+  dplyr
+)
+# import the linelist
+CropDesc <- import("CropDesc_TF.rds")
+All <- import("Newdata_TF.rds")
+Cropsys <- import("Cropsys_TF.rds")
+```
+
+# Introduction
+
+**Dashboard ASSET project survey - Cambodia, Laos, Vietnam - 2023/2024**
+
+The aim of this dashboard is to present data collected among rural households in Cambodia, Laos and Vietnam as part of the ASSET project, during the first semester of 2023.\
+\
+To navigate in the different parts of the dashboard, use the **drop-down menus above** to display information for crops or cropping systems, then use the **drop-down menus on the left** of the board to select the study areas, crops, cropping systems...
+
+# Information {.sidebar}
+
+```{r}
+library(flexdashboard)
+library(dplyr)
+
+#Drop-down menu of study area chosen
+selectInput("Sarea_choice", label = "Select a study area to display:",
+            choices = unique(CropDesc$Sarea), selected = unique(CropDesc$Sarea)[[1]])
+
+
+
+area.choices = reactive({
+  CropDesc %>%
+  filter(Sarea==input$Sarea_choice)
+})
+
+
+renderUI({selectInput("Crop_choice", label = "For Crops part - Select a crop to display:",
+        choices = area.choices()$Crop, selected = area.choices()$Crop[[1]])})
+
+area.choicesb = reactive({
+  Cropsys %>%
+  filter(Sarea==input$Sarea_choice & Crop==input$Crop_choice )
+})
+
+#We create the 
+renderUI({selectInput("Cropsys_choice", label = "For Cropping systems part - Select a cropping system to display:",
+            choices = area.choicesb()$Cropsys, selected = area.choicesb()$Cropsys[[1]])})
+```
+
+Definitions:\
+N Study area = Number of households in the study area\
+N Crop = Number of households growing a specific crop in the study area\
+N Cropsys = Number of households having a specific cropping system
+
+# Cultivation {data-navmenu="Crops"}
+
+## Row 1 {data-height=200}
+
+### **General**
+
+N Study area = **`r renderText({nrow(All[All$S_Area == input$Sarea_choice,])})`** / N Crop = **`r renderText({CropDesc$N[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]})`**\
+**`r renderText({CropDesc$PerCentofHouseholds[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`%** of households grow this crop (% of N Study area) \
+Average area = **`r renderText({round(CropDesc$'Area - m2'[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]/10000, digits = 3)})` ha**\
+Number of species grown: **`r renderText({round(CropDesc$NumberSpecies[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice], digits = 2)})`**\
+**`r renderText({CropDesc$'-Conservation of traditionnal, local seeds'[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`%** of households are conserving/using local seeds (% of N Crop)
+
+### **Sowing**
+
+The unit most commonly used to quantify this crop "seeding" is:\
+**`r renderText({CropDesc$MSeedUnit[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]})`** (**`r renderText({CropDesc$PerCentMSeedUnit[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**% of N Crop)
+
+```{r}
+renderTable({
+SowingT <- CropDesc[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice,c(8:12)]
+SowingT <- SowingT %>%
+  select_if(~ !any(is.na(.))) %>%
+  add_column("Sowing Unit" = "Amount/ha") %>%
+  select('Sowing Unit', everything())
+print(SowingT)
+})
+```
+
+
+## Row 2 {data-height= 800}
+
+### **Main practices & AE practices implemented (>10% of N Crop)**
+
+```{r}
+renderTable({
+AEP <- as.data.frame(t(CropDesc[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice,c(37:95)]))
+colnames(AEP) <- "PerCent"
+AEP = dplyr::filter(AEP, as.numeric(PerCent) >= 0.1)
+AEP <- AEP %>% add_column("Category and practice" = rownames(AEP), .before = "PerCent")
+print(AEP)
+})
+```
+
+### **Area distribution**
+```{r}
+renderPlotly({
+   columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("d2_132.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n Area (m2) - N = ", CropDesc$N[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]))+
+    theme(legend.position='none')+
+    ylab("Area (m2)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+# Production {data-navmenu="Crops"}
+
+## Row 1 {data-height= 400}
+
+### **Production and selling**
+**`r renderText({CropDesc$PerCentSellers[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`%** of households (% of study area) are selling **`r renderText({input$Crop_choice})`** (Form = **`r renderText({CropDesc$MFormWhenSold[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]})`** - **`r renderText({CropDesc$PerCentMFormWhenSold[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]})`**)
+```{r}
+renderTable({
+  Prod <- as.data.frame(t(CropDesc[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice,c(13,20:21,23:24)]))
+  colnames(Prod) <- "Average"
+  Prod <- Prod %>% add_column("Production & selling" = rownames(Prod), .before = "Average")
+print(Prod)
+})
+```
+
+### **Reasons for growing this crop**
+Main reason for growing this crop (% of N Crop):\
+\
+Household consumption preference: **`r renderText({CropDesc$"Reason% - Household consumption preferences"[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**%\
+Market price and demand: **`r renderText({CropDesc$"Reason% - Market price and demand"[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**%\
+Well adapted to local conditions: **`r renderText({CropDesc$"Reason% - Well adapted to local conditions"[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**%
+
+
+
+## Row 2 {data-height=600}
+
+### **Yield distribution**
+```{r}
+renderPlotly({
+   columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("d2_ha135.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n Yield (kg/ha) - N = ", CropDesc$N[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]))+
+    theme(legend.position='none')+
+    ylab("Yield (kg/ha)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+### **Gross product/ha distribution**
+```{r}
+renderPlotly({
+   columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("GrossProductha.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select(all_of(columns_to_select), starts_with(pattern))
+  if(!all(is.na(Area[,2]))) {
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n Gross product ($/ha) - N = ", CropDesc$N[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]))+
+    theme(legend.position='none')+
+    ylab("Gross product ($/ha)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+  } else {}
+})
+```
+
+
+# Cropping constraints {data-navmenu="Crops" data-orientation=columns}
+
+## Column 1 {data-width=400}
+
+### **Main constraints faced by households (>10% of N Crop)**
+```{r}
+renderTable({
+Cons <- as.data.frame(t(CropDesc[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice,c(28:36)]))
+colnames(Cons) <- "PerCent"
+Cons = dplyr::filter(Cons, as.numeric(PerCent) >= 0.1)
+Cons <- Cons %>% add_column("Main constraints" = rownames(Cons), .before = "PerCent")
+print(Cons)
+})
+```
+
+### **Perception of cultivation requirements**
+**`r renderText({CropDesc$"Obs-Crops requiring more water than others"[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**% of households indicated that this Crops required more water than others\
+**`r renderText({CropDesc$"Obs-Crops requiring heavy fertilization to thrive"[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**% indicated it was requiring heavy fertilization to thrive\
+**`r renderText({CropDesc$"Obs-Crops requiring heavy use of pesticides to thrive"[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**% indicated it was requiring heavy use of pesticides to thrive
+
+
+## Column 2 {data-width=600}
+
+### Constraints distribution
+```{r}
+renderPlotly({
+    columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+    pattern <- paste0("d81_b - Constraint.",input$Crop_choice)
+    xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+    Beta <- All %>%
+     filter(S_Area == input$Sarea_choice, !is.na(!!sym(pattern))) %>%
+      select(all_of(columns_to_select), starts_with(pattern)) %>%
+       group_by(!!sym(columns_to_select)) %>%
+         count(!!sym(pattern)) %>% 
+           mutate(prop = round(n / sum(n), digits = 2))
+    Beta <- as.data.frame(Beta)
+  ggplotly(    
+  plotb <- ggplot(Beta, aes(x = Beta[,1], y = Beta[,4], fill = Beta[,2], label = Beta[,4]))+
+    geom_col(colour="black",position = 'stack')+
+    geom_text(size = 3, position = position_stack(vjust = 0.5))+
+   ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n Constraints - N = ", CropDesc$N[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]))+
+    theme(axis.text.x = element_text(size=9, angle = 85), legend.title = element_blank())+
+    ylab("Gross product ($/ha)")+
+    xlab(xlab)+
+    scale_fill_viridis_d())
+})
+```
+
+
+# Overview {data-navmenu="Cropping systems"}
+<img src="CropSysOverview_Camb.jpg" alt="Your Image" style="max-width:100%;">
+
+
+# Description {data-navmenu="Cropping systems"}
+```{r}
+reactive({
+if (input$Cropsys_choice == "Broadcasted rice - household consumption") {
+cat("Information:\n
+Very common cropping system (half of the sample), grown because of household consumption preferences\n
+1-2ha of broadcasted rice, 71% of farmers build terraces, 60% use animal manure\n
+42% do land-leveling and 39% leave crop residues maintained to cover the soil\n
+Average sowing amount (around 80-100 kg/ha), average yield (mostly <2 t/ha)\n
+No selling. Many households (almost 50%) think it require important\n amount of fertilizer/pesticides\n
+\n
+Assumptions:\n
+- Crop grown for household consumption as not much lowland area (150-200kg/hmember/year)\n
+- Use of pesticides (herbicides)\n
+- Few fertilizers used out of animal manure\n")
+} else if(input$Cropsys_choice == "Broadcasted rice - consumption and selling") {
+  cat("Information:\n
+Very common cropping system (One third of the sample)\n
+Grown because of household consumption preferences and selling of additionnal production\n
+2-3ha of broadcasted rice, 72% of farmers build terraces, 65% use animal manure\n
+48% do land-leveling and 38% leave crop residues maintained to cover the soil\n
+Average sowing amount (around 80-100 kg/ha), average yield (mostly <2 t/ha)\n
+No selling. Many households (almost 50%) think it require important\n amount of fertilizer\n
+\n
+Assumptions:\n
+- Crop grown for household consumption (150-200kg/hmember/year)\n
+- As enough land, selling of rice surplus\n
+- Use of pesticides (herbicides)\n
+- Few fertilizers used out of animal manure\n")
+} else if(input$Cropsys_choice == "Broadcasted/transplanted rice with off-season vegetables ") {
+  cat("Information:\n
+Uncommon cropping system (1% of the sample)\n
+Area of rice and vegetables/peanut in the lowland, rice is not sold (household consumption preferences)\n
+Most other crops are sold (Peanut, Savoy cabbage, Long bean, Cucumber,\n
+Water spinach, Mustard greens, Pak Choy, Amaranth)\n
+Some Melon and Savoy cabbage are not sold\n
+1ha of broadcasted rice, 72% of farmers build terraces, 66% use animal manure\n
+51% do land-leveling and 44% leave crop residues maintained to cover the soil\n
+Average sowing amount (around 70-80 kg/ha), average yield (mostly <2 t/ha)\n
+For further information about vegetables, check the following parts\n
+\n
+Assumptions:\n
+- Rice grown for household consumption (150-200kg/hmember/year)
+- Vegetables grown on a share of rice plots during the same year for commercial purposes\n
+- Use of pesticides (herbicides) for broadcasted rice systems\n")
+} else if(input$Cropsys_choice == "Cassava monocropping") {
+  cat("Text to display when the condition is false.")
+} else if(input$Cropsys_choice == "Cashew - Plantations with annual crops intercropping") {
+  cat("Text to display when the condition is false.")
+} else if(input$Cropsys_choice == "Soybean monocropping") {
+  cat("Text to display when the condition is false.")
+} else if(input$Cropsys_choice == "Fruit trees - Household consumption") {
+  cat("Text to display when the condition is false.")
+} else if(input$Cropsys_choice == "Fruit trees - Productive plantations") {
+  cat("Text to display when the condition is false.")
+} else if(input$Cropsys_choice == "None") {
+  cat("Text to display when the condition is false.")
+} else if(input$Cropsys_choice == "Cashew - Productive plantations") {
+  cat("Text to display when the condition is false.")
+} else if(input$Cropsys_choice == "Cashew - Young plantations") {
+  cat("Text to display when the condition is false.")
+} else if(input$Cropsys_choice == "Upland rice monocropping") {
+  cat("Text to display when the condition is false.")
+} else if(input$Cropsys_choice == "Transplanted rice - household consumption") {
+  cat("Text to display when the condition is false.")
+} else if(input$Cropsys_choice == "Transplanted rice - consumption and selling") {
+  cat("Text to display when the condition is false.")
+} else if(input$Cropsys_choice == "Fruit trees - Young plantations"){
+  cat("Text to display when the condition is false.")}
+})
+```
+
+
+# Cultivation {data-navmenu="Cropping systems"}
+
+## Row 1 {data-height=300}
+
+### **General**
+
+N Study area = **`r renderText({nrow(All[All$S_Area == input$Sarea_choice,])})`** / N Crop = **`r renderText({CropDesc$N[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]})`** / N cropsys = **`r renderText({Cropsys$N[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]})`**\
+**`r renderText({Cropsys$PerCentofHouseholds[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`%** of households grow this crop in this cropping system (% of N Study area) \
+Average area = **`r renderText({round(Cropsys$'Area - m2'[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]/10000, digits = 3)})` ha**\
+\
+Main reason for growing this crop in this cropping system (% of N Crop):\
+Household consumption preference: **`r renderText({Cropsys$"Reason% - Household consumption preferences"[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`**%\
+Market price and demand: **`r renderText({Cropsys$"Reason% - Market price and demand"[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`**%\
+Well adapted to local conditions: **`r renderText({Cropsys$"Reason% - Well adapted to local conditions"[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`**%
+
+### **Main practices & AE practices implemented (>10% of N Crop)**
+```{r}
+renderTable({
+AEP <- as.data.frame(t(Cropsys[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice,c(39:97)]))
+colnames(AEP) <- "PerCent"
+AEP = dplyr::filter(AEP, as.numeric(PerCent) >= 0.1)
+AEP <- AEP %>% add_column("Category and practice" = rownames(AEP), .before = "PerCent")
+print(AEP)
+})
+```
+
+
+
+## Row 2 {data-height= 700}
+
+### **Sowing**
+```{r}
+renderPlotly({
+  columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("d2_ha134.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select("hhid_re2", all_of(columns_to_select), matches(input$Crop_choice))
+  Area <- Area[!is.na(Area[,4]),]
+    if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "No" | Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Norm" ){}else{
+      if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Cons"){
+        Area <- Area[is.na(Area[,10]) | Area[,10] == 0,] 
+         }else{if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Sell"){
+          Area <- Area[Area[,10] > 0 & !is.na(Area[,10]),]
+           }else{if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Prod"){
+            Area <- Area[Area[,14] > 0 & !is.na(Area[,14]),]
+             }else{if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "NoProd"){
+              Area <- Area[is.na(Area[,14]) | Area[,14] == 0,]
+               }else{
+                x <- strsplit(gsub("\"", "", Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]), ",")[[1]]
+                Area <- Area[Area$hhid_re2 %in% x,]  
+               }}}}}
+    Area <- Area %>% 
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n", input$Cropsys_choice, "\n Sowing amount - N = ", Cropsys$N[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]))+
+    theme(legend.position='none')+
+    ylab(Cropsys$MSeedUnit[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice])+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+### **Area distribution**
+```{r}
+renderPlotly({
+  columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("d2_132.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select("hhid_re2", all_of(columns_to_select), matches(input$Crop_choice))
+  Area <- Area[!is.na(Area[,4]),]
+    if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "No" | Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Norm"){}else{
+      if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Cons"){
+        Area <- Area[is.na(Area[,10]) | Area[,10] == 0,] 
+         }else{if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Sell"){
+          Area <- Area[Area[,10] > 0 & !is.na(Area[,10]),]
+           }else{if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Prod"){
+            Area <- Area[Area[,14] > 0 & !is.na(Area[,14]),]
+             }else{if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "NoProd"){
+              Area <- Area[is.na(Area[,14]) | Area[,14] == 0,]
+               }else{
+                x <- strsplit(gsub("\"", "", Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]), ",")[[1]]
+                Area <- Area[Area$hhid_re2 %in% x,]  
+               }}}}}
+    Area <- Area %>% 
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n", input$Cropsys_choice, "\n Area (m2) - N = ", Cropsys$N[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]))+
+    theme(legend.position='none')+
+    ylab("Area (m2)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+# Production, selling and additionnal {data-navmenu="Cropping systems"}
+
+## Row 1 {data-height=300}
+
+### **Production and selling**
+**`r renderText({Cropsys$PerCentSellers[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`%** of households (% of study area) are selling **`r renderText({input$Crop_choice})`** (Form = **`r renderText({Cropsys$MFormWhenSold[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]})`** - **`r renderText({Cropsys$PerCentMFormWhenSold[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]})`**)
+```{r}
+renderTable({
+  Prod <- as.data.frame(t(Cropsys[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice,c(15,22:23,25:26)]))
+  colnames(Prod) <- "Average"
+  Prod <- Prod %>% add_column("Production & selling" = rownames(Prod), .before = "Average")
+print(Prod)
+})
+```
+
+### **Perception of cultivation requirements**
+**`r renderText({Cropsys$"Obs-Crops requiring more water than others"[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`**% of households indicated that this Crops required more water than others\
+**`r renderText({Cropsys$"Obs-Crops requiring heavy fertilization to thrive"[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`**% indicated it was requiring heavy fertilization to thrive\
+**`r renderText({Cropsys$"Obs-Crops requiring heavy use of pesticides to thrive"[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`**% indicated it was requiring heavy use of pesticides to thrive
+
+## Row 2 {data-height= 700}
+
+### **Yield distribution**
+```{r}
+renderPlotly({
+  columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("d2_ha135.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select("hhid_re2", all_of(columns_to_select), matches(input$Crop_choice))
+  Area <- Area[!is.na(Area[,4]),]
+    if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "No" | Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Norm"){}else{
+      if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Cons"){
+        Area <- Area[is.na(Area[,10]) | Area[,10] == 0,] 
+         }else{if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Sell"){
+          Area <- Area[Area[,10] > 0 & !is.na(Area[,10]),]
+           }else{if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Prod"){
+            Area <- Area[Area[,14] > 0 & !is.na(Area[,14]),]
+             }else{if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "NoProd"){
+              Area <- Area[is.na(Area[,14]) | Area[,14] == 0,]
+               }else{
+                x <- strsplit(gsub("\"", "", Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]), ",")[[1]]
+                Area <- Area[Area$hhid_re2 %in% x,]  
+               }}}}}
+    Area <- Area %>% 
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n", input$Cropsys_choice, "\n Yield (kg/ha) - N = ", Cropsys$N[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]))+
+    theme(legend.position='none')+
+    ylab("Yield (kg/ha)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+### **Gross product/ha distribution**
+```{r}
+renderPlotly({
+  columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("GrossProductha.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select("hhid_re2", all_of(columns_to_select), matches(input$Crop_choice))
+  Area <- Area[!is.na(Area[,4]),]
+    if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "No" | Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Norm"){}else{
+      if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Cons"){
+        Area <- Area[is.na(Area[,10]) | Area[,10] == 0,] 
+         }else{if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Sell"){
+          Area <- Area[Area[,10] > 0 & !is.na(Area[,10]),]
+           }else{if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Prod"){
+            Area <- Area[Area[,14] > 0 & !is.na(Area[,14]),]
+             }else{if(Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "NoProd"){
+              Area <- Area[is.na(Area[,14]) | Area[,14] == 0,]
+               }else{
+                x <- strsplit(gsub("\"", "", Cropsys$Process[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]), ",")[[1]]
+                Area <- Area[Area$hhid_re2 %in% x,]  
+               }}}}}
+    Area <- Area %>% 
+      select(all_of(columns_to_select), starts_with(pattern))
+  if(!all(is.na(Area[,2]))) {
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n", input$Cropsys_choice, "\n Gross product ($/ha) - N = ", Cropsys$N[Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]))+
+    theme(legend.position='none')+
+    ylab("Gross product ($/ha)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+    )
+  }
+})
+```
+

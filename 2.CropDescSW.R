@@ -8,6 +8,7 @@ library(RColorBrewer)
 library(labelled)
 library(sjlabelled)
 library(stringr)
+library(survey)
 #Options
 options(warn=1)
 
@@ -79,10 +80,7 @@ croplist <- readRDS("croplist.rds")
 CropDesc <- expand.grid(Column1 = Sarealist[,1], Column2 = Croplist)
 colnames(CropDesc) <- c("Sarea","Crop")
 #No we add the required columns for different variables
-CropSystems3C_TF$SW_Weight <- as.numeric(CropSystems3C_TF$SW_Weight)
 
-i = "Cambodia"
-j = "Wet season rice broadcast"
 
 #We add all the calculated columns through a pipe
 for (i in Sarealist[,1]){
@@ -93,18 +91,19 @@ for (i in Sarealist[,1]){
     Dumm1 <- Dumm %>%
       select(matches(grep(j, names(Dumm), value = TRUE)),starts_with("SW_"))
     ## c - Sampling design
+    survey_design <- svydesign(ids = ~1, weights = ~SW_Weight, data = Dumm1)
     #"If" loop to remove non-existent crop-country combination
     if(!all(is.na(Dumm1[,grep("d2_132", names(Dumm1), value = TRUE)]) |
            Dumm1[,grep("d2_132", names(Dumm1), value = TRUE)] == "")){
            #N = Households growing this crop
-           CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j] <- sum(!(is.na(Dumm1[,grep("d2_132", names(Dumm1), value = TRUE)]) |
-                                                                          Dumm1[,grep("d2_132", names(Dumm1), value = TRUE)] == ""))
+           CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j] <- sum(Dumm1$SW_Weight[!(is.na(Dumm1[,grep("d2_132", names(Dumm1), value = TRUE)]) |
+                                                                           Dumm1[,grep("d2_132", names(Dumm1), value = TRUE)] == "")])
            #PerCentofHouseholds = % of households growing this crop (per study area)
            CropDesc$PerCentofHouseholds[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j]/nrow(Dumm), digits = 3)
+             round(CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j]/sum(Dumm1$SW_Weight), digits = 3)
            #Area - m2
            CropDesc$`Area - m2`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(mean(Dumm1[,grep("d2_132", names(Dumm1))], na.rm = T), digits = 0)
+             round(svymean(~ Dumm1[, grep("d2_132", names(Dumm1))], design = survey_design, na.rm = TRUE), digits = 3)
            #MSeedUnit
            Ccount <- table(Dumm1[grep("d2_133", names(Dumm1), value = TRUE)])
            Ccount <- Ccount[!is.na(names(Ccount)) & names(Ccount) != ""]
@@ -112,34 +111,49 @@ for (i in Sarealist[,1]){
              names(Ccount)[which.max(Ccount)]
            #PerCentMSeedUnit
            CropDesc$PerCentMSeedUnit[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == CropDesc$MSeedUnit[CropDesc$Sarea == i & CropDesc$Crop == j], na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == CropDesc$MSeedUnit[CropDesc$Sarea == i & CropDesc$Crop == j]], na.rm = T) /
              CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #Seed amount /ha - Kg of seed = Seed amount used for sowing
+           sub_svy_design <- subset(survey_design, subset = Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Kg of seed")
+           #
            CropDesc$'Seed amount /ha - Kg of seed'[CropDesc$Sarea == i & CropDesc$Crop == j] <-
              ifelse(sum(Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Kg of seed", na.rm = T) != 0,
-                    round(mean(Dumm1[Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Kg of seed",grep("d2_ha134", names(Dumm1))], na.rm = T), digits = 0), NA)
+                    round(svymean(~ Dumm1[Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Kg of seed" & !is.na(Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)]),
+                                          grep("d2_ha134", names(Dumm1))], design = sub_svy_design, na.rm = TRUE), digits = 0), NA)
            #Seed amount /ha - Gr of seed
+           sub_svy_design <- subset(survey_design, subset = Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Gr of seed")
+           #
            CropDesc$'Seed amount /ha - Gr of seed'[CropDesc$Sarea == i & CropDesc$Crop == j] <-
              ifelse(sum(Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Gr of seed", na.rm = T) != 0,
-                    round(mean(Dumm1[Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Gr of seed",grep("d2_ha134", names(Dumm1))], na.rm = T), digits = 0), NA)
+                    round(svymean(~ Dumm1[Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Gr of seed" & !is.na(Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)]),
+                                          grep("d2_ha134", names(Dumm1))], design = sub_svy_design, na.rm = TRUE), digits = 0), NA)
            #Seed amount /ha - Number of seedlings
+           sub_svy_design <- subset(survey_design, subset = Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Number of seedlings")
+           #
            CropDesc$'Seed amount /ha - Number of seedlings'[CropDesc$Sarea == i & CropDesc$Crop == j] <-
              ifelse(sum(Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Number of seedlings", na.rm = T) != 0,
-                    round(mean(Dumm1[Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Number of seedlings",grep("d2_ha134", names(Dumm1))], na.rm = T), digits = 0), NA)
+                    round(svymean(~ Dumm1[Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Number of seedlings" & !is.na(Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)]),
+                                          grep("d2_ha134", names(Dumm1))], design = sub_svy_design, na.rm = TRUE), digits = 0), NA)
            #Seed amount /ha - Number of stems
+           sub_svy_design <- subset(survey_design, subset = Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Number of stems")
+           #
            CropDesc$'Seed amount /ha - Number of stems'[CropDesc$Sarea == i & CropDesc$Crop == j] <-
              ifelse(sum(Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Number of stems", na.rm = T) != 0,
-                    round(mean(Dumm1[Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Number of stems",grep("d2_ha134", names(Dumm1))], na.rm = T), digits = 0), NA)
+                    round(svymean(~ Dumm1[Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Number of stems" & !is.na(Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)]),
+                                          grep("d2_ha134", names(Dumm1))], design = sub_svy_design, na.rm = TRUE), digits = 0), NA)
            #Seed amount /ha - Tuber
+           sub_svy_design <- subset(survey_design, subset = Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Tuber")
+           #
            CropDesc$'Seed amount /ha - Tuber'[CropDesc$Sarea == i & CropDesc$Crop == j] <-
              ifelse(sum(Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Tuber", na.rm = T) != 0,
-                    round(mean(Dumm1[Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Tuber",grep("d2_ha134", names(Dumm1))], na.rm = T), digits = 0), NA)
+                    round(svymean(~ Dumm1[Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)] == "Tuber" & !is.na(Dumm1[,grep("d2_133", names(Dumm1), value = TRUE)]),
+                                          grep("d2_ha134", names(Dumm1))], design = sub_svy_design, na.rm = TRUE), digits = 0), NA)    
            #Yield - Kg/ha
            CropDesc$'Yield - Kg/ha'[CropDesc$Sarea == i & CropDesc$Crop == j] <- 
-             round(mean(Dumm1[,grep("d2_ha135", names(Dumm1))], na.rm = T), digits = 0)
+             round(svymean(~ Dumm1[, grep("d2_ha135", names(Dumm1))], design = survey_design, na.rm = TRUE), digits = 0)
            #PerCentSellers = % of households selling this crop (% of households of study area)
            CropDesc$PerCentSellers[CropDesc$Sarea == i & CropDesc$Crop == j] <- 
-            round(sum(Dumm1[,grep("d2_ha136", names(Dumm1), value = TRUE)] > 1, na.rm = T)  /
+            round(sum(Dumm1$SW_Weight[Dumm1[,grep("d2_ha136", names(Dumm1), value = TRUE)] > 1], na.rm = T)  /
                      CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #MFormWhenSold
            Ccount <- table(Dumm1[grep("d2_139", names(Dumm1), value = TRUE)])
@@ -147,82 +161,108 @@ for (i in Sarealist[,1]){
              names(Ccount)[which.max(Ccount)]
            #PerCentMFormWhenSold
            CropDesc$PerCentMFormWhenSold[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d2_139", names(Dumm1), value = TRUE)] == CropDesc$MFormWhenSold[CropDesc$Sarea == i & CropDesc$Crop == j], na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d2_139", names(Dumm1), value = TRUE)] == CropDesc$MFormWhenSold[CropDesc$Sarea == i & CropDesc$Crop == j]], na.rm = T) /
              CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #Amount sold - Kg/ha - Total
+           sub_svy_design <- subset(survey_design, subset = Dumm1[,grep("d2_ha136", names(Dumm1), value = TRUE)] != 0)
+           #
            CropDesc$'Amount sold - Kg/ha - Total'[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(mean(Dumm1[Dumm1[, grep("d2_ha136", names(Dumm1))] != 0,grep("d2_ha136", names(Dumm1))], na.rm = T), digits = 0)
+                    round(svymean(~ Dumm1[Dumm1[,grep("d2_ha136", names(Dumm1), value = TRUE)] != 0 & !is.na(Dumm1[,grep("d2_ha136", names(Dumm1), value = TRUE)]),
+                                          grep("d2_ha136", names(Dumm1))], design = sub_svy_design, na.rm = TRUE), digits = 0)
            #Amount sold - Kg/ha - Dried
+           sub_svy_design <- subset(survey_design, subset = Dumm1[,grep("d2_139", names(Dumm1))] == "Dried")
+           #
            CropDesc$'Amount sold - Kg/ha - Dry'[CropDesc$Sarea == i & CropDesc$Crop == j] <-
              ifelse(sum(Dumm1[,grep("d2_139", names(Dumm1), value = TRUE)] == "Dried", na.rm = T) != 0,
-                    round(mean(Dumm1[Dumm1[, grep("d2_139", names(Dumm1))] == "Dried", grep("d2_ha136", names(Dumm1))], na.rm = T), digits = 0), NA)
+                    round(svymean(~ Dumm1[Dumm1[,grep("d2_139", names(Dumm1), value = TRUE)] == "Dried" & !is.na(Dumm1[,grep("d2_139", names(Dumm1), value = TRUE)]),
+                                          grep("d2_ha136", names(Dumm1))], design = sub_svy_design, na.rm = TRUE), digits = 0), NA) 
            #Amount sold - Kg/ha - Fresh
+           sub_svy_design <- subset(survey_design, subset = Dumm1[,grep("d2_139", names(Dumm1))] == "Fresh")
+           #
            CropDesc$'Amount sold - Kg/ha - Fresh'[CropDesc$Sarea == i & CropDesc$Crop == j] <-
              ifelse(sum(Dumm1[,grep("d2_139", names(Dumm1), value = TRUE)] == "Fresh", na.rm = T) != 0,
-                    round(mean(Dumm1[Dumm1[, grep("d2_139", names(Dumm1))] == "Fresh", grep("d2_ha136", names(Dumm1))], na.rm = T), digits = 0), NA)
+                    round(svymean(~ Dumm1[Dumm1[,grep("d2_139", names(Dumm1), value = TRUE)] == "Fresh" & !is.na(Dumm1[,grep("d2_139", names(Dumm1), value = TRUE)]),
+                                          grep("d2_ha136", names(Dumm1))], design = sub_svy_design, na.rm = TRUE), digits = 0), NA) 
            #PerCentHarvestSold = Percentage of harvest sold by households who sell
+           sub_svy_design <- subset(survey_design, subset = Dumm1[,grep("d2_ha136", names(Dumm1))] != 0)
+           #
            CropDesc$'PerCentHarvestSold'[CropDesc$Sarea == i & CropDesc$Crop == j] <- 
-             round(mean(Dumm1[Dumm1[, grep("d2_ha136", names(Dumm1))] != 0,grep("d2_ha136", names(Dumm1), value = TRUE)] /
-                    Dumm1[Dumm1[, grep("d2_ha136", names(Dumm1))] != 0,grep("d2_ha135", names(Dumm1), value = TRUE)], na.rm = T), digits = 3)
+             round(svymean(~ Dumm1[Dumm1[, grep("d2_ha136", names(Dumm1))] != 0 & !is.na(Dumm1[, grep("d2_ha136", names(Dumm1))]),grep("d2_ha136", names(Dumm1), value = TRUE)],
+                           design = sub_svy_design, na.rm = TRUE) /
+                     svymean(~ Dumm1[Dumm1[, grep("d2_ha136", names(Dumm1))] != 0 & !is.na(Dumm1[, grep("d2_ha136", names(Dumm1))]),grep("d2_ha135", names(Dumm1), value = TRUE)],
+                            design = sub_svy_design, na.rm = TRUE), digits = 3)
            #Selling price - $/kg ("0" values removed)
+           sub_svy_design <- subset(survey_design, subset = Dumm1[,grep("d2_137", names(Dumm1), value = TRUE)] != 0)
+           #
            CropDesc$`Selling price - $/kg`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(mean(Dumm1[Dumm1[,grep("d2_137", names(Dumm1))] != 0,grep("d2_137", names(Dumm1))], na.rm = T), digits = 2)
+             round(svymean(~ Dumm1[Dumm1[,grep("d2_137", names(Dumm1), value = TRUE)] != 0 & !is.na(Dumm1[,grep("d2_137", names(Dumm1), value = TRUE)]),
+                                   grep("d2_137", names(Dumm1))], design = sub_svy_design, na.rm = TRUE), digits = 2)
            #NumberSpecies (remove values > 10)
+           sub_svy_design <- subset(survey_design, subset = Dumm1[,grep("d2_138", names(Dumm1), value = TRUE)] < 11)
+           #
            CropDesc$`NumberSpecies`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(mean(Dumm1[Dumm1[,grep("d2_138", names(Dumm1))] < 11,grep("d2_138", names(Dumm1))], na.rm = T), digits = 1)
+             round(svymean(~ Dumm1[Dumm1[,grep("d2_138", names(Dumm1), value = TRUE)] < 11 & !is.na(Dumm1[,grep("d2_138", names(Dumm1), value = TRUE)]),
+                                   grep("d2_138", names(Dumm1))], design = sub_svy_design, na.rm = TRUE), digits = 1)
            #GrossProductRAW - $/household ("0" values removed)
+           sub_svy_design <- subset(survey_design, subset = Dumm1[,grep("GrossProductRaw", names(Dumm1), value = TRUE)] != 0)
+           #
            CropDesc$`GrossProductRAW - $/household`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(mean(Dumm1[Dumm1[,grep("GrossProductRaw", names(Dumm1))] != 0,grep("GrossProductRaw", names(Dumm1))], na.rm = T), digits = 0)
+             round(svymean(~ Dumm1[Dumm1[,grep("GrossProductRaw", names(Dumm1), value = TRUE)] != 0 & !is.na(Dumm1[,grep("GrossProductRaw", names(Dumm1), value = TRUE)]),
+                                   grep("GrossProductRaw", names(Dumm1))], design = sub_svy_design, na.rm = TRUE), digits = 0)
            #GrossProductHA - $/ha ("0" values removed)
+           sub_svy_design <- subset(survey_design, subset = Dumm1[,grep("GrossProductha", names(Dumm1), value = TRUE)] != 0)
+           #
            CropDesc$`GrossProduct - $/ha`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(mean(Dumm1[Dumm1[,grep("GrossProductha", names(Dumm1))] != 0,grep("GrossProductha", names(Dumm1))], na.rm = T), digits = 0)
-           #Reason% - Household consumption preferences = Why household did grow this crop, % of households growing this crop, 1st option
+             round(svymean(~ Dumm1[Dumm1[,grep("GrossProductha", names(Dumm1), value = TRUE)] != 0 & !is.na(Dumm1[,grep("GrossProductha", names(Dumm1), value = TRUE)]),
+                                   grep("GrossProductha", names(Dumm1))], design = sub_svy_design, na.rm = TRUE), digits = 0)
+           
+          #Reason% - Household consumption preferences = Why household did grow this crop, % of households growing this crop, 1st option
            CropDesc$`Reason% - Household consumption preferences`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d81_a", names(Dumm1), value = TRUE)] == "Household consumption preferences", na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d81_a", names(Dumm1), value = TRUE)] == "Household consumption preferences"], na.rm = T) /
                      CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #Reason% - Market price and demand = Why household did grow this crop, % of households growing this crop, 2nd option
            CropDesc$`Reason% - Market price and demand`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d81_a", names(Dumm1), value = TRUE)] == "Market price and demand", na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d81_a", names(Dumm1), value = TRUE)] == "Market price and demand"], na.rm = T) /
                      CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #Reason% - Well adapted to local conditions (soil, climate, …) = Why household did grow this crop, % of households growing this crop, 3rd option
            CropDesc$`Reason% - Well adapted to local conditions`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d81_a", names(Dumm1), value = TRUE)] == "Well adapted to local conditions (soil, climate, …)", na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d81_a", names(Dumm1), value = TRUE)] == "Well adapted to local conditions (soil, climate, …)"], na.rm = T) /
                      CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #Constraint% - Diseases = Main constraint faced during cropping, % of households growing this crop, 1st option
            CropDesc$`Constraint% - Diseases`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Diseases", na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Diseases"], na.rm = T) /
                      CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #Constraint% - Insects = Main constraint faced during cropping, % of households growing this crop, 2nd option
            CropDesc$`Constraint% - Insects`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Insects", na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Insects"], na.rm = T) /
                      CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #Constraint% - Market price = Main constraint faced during cropping, % of households growing this crop, 3rd option
            CropDesc$`Constraint% - Market price`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Market price", na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Market price"], na.rm = T) /
                      CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #Constraint% - Other agronomic constraints = Main constraint faced during cropping, % of households growing this crop, 4th option
            CropDesc$`Constraint% - Other agronomic constraints`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Other agronomic constraints", na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Other agronomic constraints"], na.rm = T) /
                      CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #Constraint% - Product quality = Main constraint faced during cropping, % of households growing this crop, 5th option
            CropDesc$`Constraint% - Product quality`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Product quality", na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Product quality"], na.rm = T) /
                      CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #Constraint% - Soil fertility = Main constraint faced during cropping, % of households growing this crop, 6th option
            CropDesc$`Constraint% - Soil fertility`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Soil fertility", na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Soil fertility"], na.rm = T) /
                      CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #Constraint% - Water management = Main constraint faced during cropping, % of households growing this crop, 7th option
            CropDesc$`Constraint% - Water management`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Water management", na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Water management"], na.rm = T) /
                      CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #Constraint% - Weed = Main constraint faced during cropping, % of households growing this crop, 8th option
            CropDesc$`Constraint% - Weed`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Weed", na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "Weed"], na.rm = T) /
                      CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            #Constraint% - No constraint = Main constraint faced during cropping, % of households growing this crop, 9th option
            CropDesc$`Constraint% - No constraint`[CropDesc$Sarea == i & CropDesc$Crop == j] <-
-             round(sum(Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "No constraint", na.rm = T) /
+             round(sum(Dumm1$SW_Weight[Dumm1[,grep("d81_b", names(Dumm1), value = TRUE)] == "No constraint"], na.rm = T) /
                      CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3)
            for (k in 1:ncol(AEP)){
              #Loop for different AEP practices with associated categories
@@ -232,8 +272,8 @@ for (i in Sarealist[,1]){
                CropDesc <- add_column(CropDesc, !!Dum := NA_real_)
              }
              CropDesc[[Dum]] <- ifelse(CropDesc$Sarea == i & CropDesc$Crop == j,
-                                       round(sum(!is.na(Dumm1[, grep(AEP[3, k], names(Dumm1), value = TRUE)]) & 
-                                                   Dumm1[, grep(AEP[3, k], names(Dumm1), value = TRUE)] != 0, na.rm = TRUE) /
+                                       round(sum(Dumm1$SW_Weight[!is.na(Dumm1[, grep(AEP[3, k], names(Dumm1), value = TRUE)]) & 
+                                                   Dumm1[, grep(AEP[3, k], names(Dumm1), value = TRUE)] != 0], na.rm = TRUE) /
                                                CropDesc$N[CropDesc$Sarea == i & CropDesc$Crop == j], digits = 3), 
                                        CropDesc[[Dum]])
       }

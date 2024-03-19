@@ -1,0 +1,1809 @@
+---
+title: "Dashboard_ASSET_Survey"
+author: "Titouan Filloux"
+date: "`r Sys.Date()`"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+runtime: shiny
+---
+
+```{r global, include=FALSE}
+pacman::p_load(
+  rio,             # data import/export     
+  here,            # locate files
+  tidyverse,       # data management and visualization
+  flexdashboard,   # dashboard versions of R Markdown reports
+  shiny,           # interactive figures
+  plotly,           # interactive figures
+  dplyr
+)
+# import the linelist
+All <- import("Newdata_TF.rds")
+CropDesc <- import("CropDesc_TF.rds")
+Cropsys <- import("Cropsys_TF.rds")
+AnimalDesc <- import("AnimalDesc_TF.rds")
+RnV <- readRDS("RnV_TF.rds")
+Cropsyssum <- import("Cropsyssum.rds")
+#Required changes
+All$SW_Weight <- as.character(All$SW_Weight)
+All$SW_Weight <- as.numeric(All$SW_Weight)
+```
+
+# Introduction
+
+**Dashboard ASSET project survey - Cambodia, Laos, Vietnam - 2023/2024**
+
+The aim of this dashboard is to present data collected among rural households in Cambodia, Laos and Vietnam as part of the ASSET project, during the first semester of 2023.\
+\
+To navigate in the different parts of the dashboard, use the **drop-down menus above** to display information for crops or cropping systems, then use the **drop-down menus on the left** of the board to select the study areas, crops, cropping systems...
+
+# Information {.sidebar}
+
+```{r}
+library(flexdashboard)
+library(dplyr)
+
+#Drop-down menu of study area chosen
+selectInput("Sarea_choice", label = "Select a study area to display:",
+            choices = unique(CropDesc$Sarea), selected = unique(CropDesc$Sarea)[[1]])
+
+area.choices = reactive({
+ CropDesc %>%
+  filter(Sarea==input$Sarea_choice)%>%
+  mutate(Crop = as.character(Crop)) %>%
+  arrange(Crop) %>% 
+  mutate(Crop = as.factor(Crop))
+})
+
+#Drop-down menu for Crop choice
+renderUI({selectInput("Crop_choice", label = "For Crops part - Select a crop to display:",
+        choices = area.choices()$Crop, selected = area.choices()$Crop[[1]])})
+
+area.choicesb = reactive({
+  Cropsys %>%
+  filter(Sarea==input$Sarea_choice & Crop==input$Crop_choice ) %>%
+    arrange(Cropsys)
+  Cropsys %>%
+  filter(Sarea==input$Sarea_choice & Crop==input$Crop_choice)%>%
+  mutate(Cropsys = as.character(Cropsys)) %>%
+  arrange(Cropsys) %>% 
+  mutate(Cropsys = as.factor(Cropsys))
+})
+
+#We create the Crop system choice drop-down menu
+renderUI({selectInput("Cropsys_choice", label = "For Cropping systems part - Select a cropping system to display:",
+            choices = area.choicesb()$Cropsys, selected = area.choicesb()$Cropsys[[1]])})
+
+
+
+area.choicesc = reactive({
+ AnimalDesc %>%
+  filter(S_Area==input$Sarea_choice)%>%
+  mutate(specie = as.character(specie)) %>%
+  arrange(specie) %>% 
+  mutate(specie = as.factor(specie))
+})
+
+#We create the Crop system choice drop-down menu
+renderUI({selectInput("Animal_choice", label = "For Raising part - Select an animal specie to display:",
+            choices = area.choicesc()$specie, selected = area.choicesc()$specie[[1]])})
+
+
+
+```
+
+<span style="color:red; font-style:italic">Definitions:\
+- N Study area = Number of households in the study area (calculated based on sampling weights, stratification at village level)\
+- N Crop / N Animal = Number of households growing a specific crop / raising a specific animal specie in the study area\
+- N Cropsys = Number of households having a specific cropping system\
+</span>
+
+<span style="color:green; font-style:italic">Other information:\
+- The % presented outside the tables are relative to the value 100 and the % presented in the tables are relative to the value 1.\
+- "NA" can correspond to the non-existence of this information for the crop/animal-country combination or null values\
+- Percentages that add up to less than 100 generally indicate missing information or information that is not taken into account because its value is too low\
+- The number "2" at the end of a crop is not to be taken into account, e.g. "Cassava2"
+
+# Cultivation {data-navmenu="Crops"}
+
+## Row 1 {data-height=200}
+
+### **General**
+
+N Study area = **`r renderText({round(sum(All$SW_Weight[All$S_Area == input$Sarea_choice]), digits = 0)})`** / N Crop = **`r renderText({round(CropDesc$N[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice], digits = 0)})`**\
+**`r renderText({CropDesc$PerCentofHouseholds[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`%** of households grow this crop (% of N Study area) \
+Average area = **`r renderText({round(CropDesc$'Area - m2'[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]/10000, digits = 3)})` ha**\
+Number of species grown: **`r renderText({round(CropDesc$NumberSpecies[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice], digits = 2)})`**\
+**`r renderText({CropDesc$'-Conservation of traditionnal, local seeds'[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`%** of households are conserving/using local seeds (% of N Crop)
+
+### **Sowing**
+
+The unit most commonly used to quantify this crop "seeding" is:\
+**`r renderText({CropDesc$MSeedUnit[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]})`** (**`r renderText({CropDesc$PerCentMSeedUnit[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**% of N Crop)
+
+```{r}
+renderTable({
+SowingT <- CropDesc[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice,c(8:12)]
+SowingT <- SowingT %>%
+  select_if(~ !any(is.na(.))) %>%
+  add_column("Sowing Unit" = "Amount/ha") %>%
+  select('Sowing Unit', everything())
+print(SowingT)
+})
+```
+
+
+## Row 2 {data-height= 800}
+
+### **Main practices & AE practices implemented (>10% of N Crop)**
+
+```{r}
+renderTable({
+AEP <- as.data.frame(t(CropDesc[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice,c(37:95)]))
+colnames(AEP) <- "PerCent"
+AEP = dplyr::filter(AEP, as.numeric(PerCent) >= 0.1)
+AEP <- AEP %>% add_column("Category and practice" = rownames(AEP), .before = "PerCent")
+print(AEP)
+})
+```
+
+### **Area distribution**
+```{r}
+renderPlotly({
+   columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("d2_132.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n Area (m2) - N = ", round(CropDesc$N[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice], digits = 0)))+
+    theme(legend.position='none', plot.title = element_text(size = 12))+
+    ylab("Area (m2)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+# Production {data-navmenu="Crops"}
+
+## Row 1 {data-height= 400}
+
+### **Production and selling**
+**`r renderText({CropDesc$PerCentSellers[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`%** of households (% of N crop) are selling **`r renderText({input$Crop_choice})`** (Form = **`r renderText({CropDesc$MFormWhenSold[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]})`** - **`r renderText({CropDesc$PerCentMFormWhenSold[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]})`**)
+```{r}
+renderTable({
+  Prod <- as.data.frame(t(CropDesc[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice,c(13,20:21,23:24)]))
+  colnames(Prod) <- "Average"
+  Prod <- Prod %>% add_column("Production & selling" = rownames(Prod), .before = "Average")
+print(Prod)
+})
+```
+
+### **Reasons for growing this crop**
+Main reason for growing this crop (% of N Crop):\
+\
+Household consumption preference: **`r renderText({CropDesc$"Reason% - Household consumption preferences"[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**%\
+Market price and demand: **`r renderText({CropDesc$"Reason% - Market price and demand"[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**%\
+Well adapted to local conditions: **`r renderText({CropDesc$"Reason% - Well adapted to local conditions"[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**%
+
+
+
+## Row 2 {data-height=600}
+
+### **Yield distribution**
+```{r}
+renderPlotly({
+   columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("d2_ha135.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n Yield (kg/ha) - N = ", round(CropDesc$N[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice], digits = 0)))+
+    theme(legend.position='none', plot.title = element_text(size = 12))+
+    ylab("Yield (kg/ha)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+### **Gross product/ha distribution**
+```{r}
+renderPlotly({
+   columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("GrossProductha.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select(all_of(columns_to_select), starts_with(pattern))
+  if(!all(is.na(Area[,2]))) {
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n Gross product ($/ha) - N = ", round(CropDesc$N[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice], digits = 0)))+
+    theme(legend.position='none', plot.title = element_text(size = 12))+
+    ylab("Gross product ($/ha)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+  } else {}
+})
+```
+
+
+# Cropping constraints {data-navmenu="Crops" data-orientation=columns}
+
+## Column 1 {data-width=400}
+
+### **Main constraints faced by households (>10% of N Crop)**
+```{r}
+renderTable({
+Cons <- as.data.frame(t(CropDesc[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice,c(28:36)]))
+colnames(Cons) <- "PerCent"
+Cons = dplyr::filter(Cons, as.numeric(PerCent) >= 0.1)
+Cons <- Cons %>% add_column("Main constraints" = rownames(Cons), .before = "PerCent")
+print(Cons)
+})
+```
+
+### **Perception of cultivation requirements**
+**`r renderText({CropDesc$"Obs-Crops requiring more water than others"[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**% of households indicated that this Crops required more water than others\
+**`r renderText({CropDesc$"Obs-Crops requiring heavy fertilization to thrive"[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**% indicated it was requiring heavy fertilization to thrive\
+**`r renderText({CropDesc$"Obs-Crops requiring heavy use of pesticides to thrive"[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice]*100})`**% indicated it was requiring heavy use of pesticides to thrive
+
+
+## Column 2 {data-width=600}
+
+### Constraints distribution
+```{r}
+renderPlotly({
+    columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+    pattern <- paste0("d81_b - Constraint.",input$Crop_choice)
+    xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+    Beta <- All %>%
+     filter(S_Area == input$Sarea_choice, !is.na(!!sym(pattern))) %>%
+      select(all_of(columns_to_select), starts_with(pattern)) %>%
+       group_by(!!sym(columns_to_select)) %>%
+         count(!!sym(pattern)) %>% 
+           mutate(prop = round(n / sum(n), digits = 2))
+    Beta <- as.data.frame(Beta)
+  ggplotly(    
+  plotb <- ggplot(Beta, aes(x = Beta[,1], y = Beta[,4], fill = Beta[,2], label = Beta[,4]))+
+    geom_col(colour="black",position = 'stack')+
+    geom_text(size = 3, position = position_stack(vjust = 0.5))+
+   ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n Constraints - N = ", round(CropDesc$N[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice], digits = 0)))+
+    theme(axis.text.x = element_text(size=9, angle = 85), legend.title = element_blank(), plot.title = element_text(size = 12))+
+    ylab("Gross product ($/ha)")+
+    xlab(xlab)+
+    scale_fill_viridis_d())
+})
+```
+
+
+# Overview {data-navmenu="Cropping systems"}
+```{r}
+output$image <- renderImage({
+  switch(input$Sarea_choice,
+         "Cambodia" = list(src = "CropSysOverview_Camb.jpg", width = "75%"),
+         "Lao" = list(src = "CropSysOverview_Laos.jpg", width = "95%"),
+         "Son La province" = list(src = "CropSysOverview_SL.jpg", width = "100%"),
+         "Dien Bien province" = list(src = "CropSysOverview_DB.jpg", width = "100%"))
+}, deleteFile = FALSE)
+
+imageOutput("image")
+```
+
+# Description {data-navmenu="Cropping systems"}
+**"Information" part is based on data collected during the surveys whild "Assumptions" part is made up of
+interpretations made by cross-referencing this data with general knowledge of agriculture in the area (assumptions are unverified).**
+```{r}
+reactive({
+if (input$Sarea_choice == "Cambodia") {  
+if (input$Cropsys_choice == "Broadcasted rice - household consumption") {
+cat("Information:\n
+Very common cropping system (half of the sample), grown because of household consumption preferences\n
+1-2ha of broadcasted rice, 71% of farmers build terraces, 60% use animal manure,
+42% do land-leveling and 39% leave crop residues maintained to cover the soil\n
+Average sowing amount (around 80-100 kg/ha), average yield (mostly <2 t/ha)\n
+No selling. Many households (almost 50%) think it requires important amount of fertilizer/pesticides\n
+\n
+Assumptions:\n
+- Crop grown for household consumption (150-200kg/hmember/year), no possibility of selling as not enough lands\n
+- Use of pesticides (herbicides)\n
+- Few fertilizers used out of animal manure")
+} else if(input$Cropsys_choice == "Broadcasted rice - consumption and selling") {
+  cat("Information:\n
+Very common cropping system (One third of the sample)\n
+Grown because of household consumption preferences and selling of additionnal production\n
+2-3ha of broadcasted rice, 72% of farmers build terraces, 65% use animal manure,
+48% do land-leveling and 38% leave crop residues maintained to cover the soil\n
+Average sowing amount (around 80-100 kg/ha), average yield (mostly <2 t/ha)\n
+No selling. Many households (almost 50%) think it require important amount of fertilizer\n
+\n
+Assumptions:\n
+- Crop grown for household consumption (150-200kg/hmember/year)\n
+- As enough land, selling of rice surplus\n
+- Use of pesticides (herbicides)\n
+- Few fertilizers used out of animal manure\n")
+} else if(input$Cropsys_choice == "Broadcasted/transplanted rice with off-season vegetables") {
+  cat("Information:\n
+Uncommon cropping system (1% of the sample)\n
+Area of rice and vegetables/peanut in the lowland, rice is not sold (motivated by household consumption preferences)\n
+Most other crops are sold (Peanut, Savoy cabbage, Long bean, Cucumber,
+Water spinach, Mustard greens, Pak Choy, Amaranth)\n
+Some Melon and Savoy cabbage are not sold\n
+On average 1ha of broadcasted rice, 72% of farmers build terraces, 66% use animal manure\n
+51% do land-leveling and 44% leave crop residues maintained to cover the soil\n
+Average sowing amount (around 70-80 kg/ha), average yield (mostly <2 t/ha)\n
+For further information about vegetables production, check the following parts\n
+\n
+Assumptions:\n
+- Rice grown for household consumption (150-200kg/hmember/year)\n
+- Vegetables grown on a share of rice plots during the same year for commercial purposes\n
+- Use of pesticides (herbicides) for broadcasted rice systems\n
+- Few inputs for vegetables except possible fertilization for peanuts and water spinach")
+} else if(input$Cropsys_choice == "Cassava monocropping") {
+  cat("Information:\n
+Common cropping system (45% of the sample)\n
+Cassava monocropping in the upland, All the production is sold (Motivated by Market price and demand mostly)\n
+On average 1.7ha of Cassava, 44% of farmers are weeding through mowing/slashing\n
+Low density (around 2500 stems/ha = 2-meter horizontal and vertical spacing at ha ),\n
+Average/low yield (In all villages except Rik Reay, mostly <5 t/ha, higher in Rik Reay)\n
+35.6% indicated it was requiring heavy fertilization to thrive,
+55.6% indicated it was requiring heavy use of pesticides to thrive
+\n
+Assumptions:\n
+- Cassava grown as cash crop with low density and low input use due to low soil potential/low investment capacity\n
+- Use of herbicides/mechanical weeding for households who are not using mowing/slashing\n
+- Use of fertilizers as no other practice used to maintain soil fertility\n
+- Possible that this crop is used in rotation with other upland crops (soybean, upland rice...)
+but the information was missed during the interview")
+} else if(input$Cropsys_choice == "Cashew - Plantations with annual crops intercropping") {
+cat("Information:\n
+Common cropping system (24% of the sample)\n
+Cashew plantation in the upland with intercropping of cassava, soybean or upland rice\n
+All the production is sold for productive plantation which represent half of the
+farmers concerned by this cropping system (Motivated by Market price and demand mostly)\n
+On average 1.9ha of Cassava, 38% of farmers are weeding through mowing/slashing and 33% are 
+using weaver ants to protect cashew trees against pests\n
+Normal/high density, around 200-300 trees/ha, Low yields (144 kg/ha/year)\n
+28.8% indicated it was requiring heavy fertilization to thrive /
+53.4% indicated it was requiring heavy use of pesticides to thrive\n
+For associated annual crops, charcteristics are similar to their respectivecropping systems as pure crops
+except lower sowing density (Cassava = 2000 stems/ha, Soybean = 50 kg of seeds/ha, Upland rice = 70 kg of seed/ha)
+\n
+Assumptions:\n
+- Plots of young cashew plantation with no or low production, with annual crops in spacing with low densities and 
+low input use due to low soil potential/low investment capacity and cashew trees presence in the plot\n
+- Use of herbicides/mechanical weeding for households who are not using mowing/slashing, use of fertilizers 
+as no other practice used to maintain soil fertility")
+} else if(input$Cropsys_choice == "Soybean monocropping") {
+  cat("Medium-common cropping system (15% of the sample)\n
+Soybean monocropping in the upland, Almost all the production is sold (Motivated by Market price and demand mostly)\n
+On average 1.2ha of Soybean, 40% of farmers are weeding through mowing/slashing\n
+Medium-low density: around 50-60 kg/ha, average/low yield (In all villages except Rous Ran, mostly around 1 t/ha,
+higher in Rous Ran)\n
+53.9% indicated it was requiring heavy use of pesticides to thrive
+\n
+Assumptions:\n
+- Soybean grown as cash crop with low density and low input use due to low soil potential/low investment capacity\n
+- Use of herbicides/mechanical weeding for households who are not using mowing/slashing\n
+- Use of fertilizers as no other practice used to maintain soil fertility\n
+- Possible that this crop is used in rotation with other upland crops (cassava, upland rice...)
+but the information was missed during the interview")
+} else if(input$Cropsys_choice == "Fruit trees - Household consumption") {
+cat("One farmer only, small plot of Guava (320 m2) with production probably used for household consumption 
+(Household consumption preference). Probably very common in the area but this kind of cropping system was recorded
+in the homegarden part which was not included in this dashboard")
+} else if(input$Cropsys_choice == "Fruit trees - Productive plantations") {
+cat("Uncommon cropping system (1.5% of the sample)\n
+Fruit trees (Longan,Guava, Sweetsop, Lime, Bananas) in the upland, Almost all the production is sold 
+except bananas sold and used for household consumption\n
+Motivated by Market price and demand mostly\n
+On average 0.5ha of Misc. fruit trees, Most farmers are using/practicing:
+- Water ponds, swales digging
+- Crop residues to cover the soil
+- Fertilization through animal manure, Recycling crop waste & Ramial Wood Chip (RWC) or other wood chips
+- Weeding through mowing/slashing
+(100% for longan & guava, 50% for lime, 33% for sweetsop, only mowing slashing for bananas)\n
+Variable density and low production:
+- 100 trees/ha for longan - 200 kg/ha
+- 2000 trees/ha for guava - 1.6 t/ha
+- 200-350 trees/ha for sweetsop - Variable around 1.2 t/ha
+- Variable for lime and bananas - Variable around 200 kg/ha for lime and 3250 kg/ha for bananas\n
+For most kind of fruits: Insects constraint, requiring water, heavy fertilization and pesticides\n
+Except for lime (no constraint and only requiring water) and Bananas (variable)
+\n
+Assumptions:\n
+- Fruit trees grown as cash crop by households with possibility to do so (knowledge, land, labor force,
+value chain access...)
+with low to high density depending on the species, with many practices associated related to watering,
+soil fertility and pest and disease management")
+} else if(input$Cropsys_choice == "None") {
+  cat("No cropping system related to this crop")
+} else if(input$Cropsys_choice == "Cashew - Productive plantations") {
+  cat("Information:\n
+Common cropping system (51% of the sample)\n
+Cashew plantation in the upland with no intercropping\n
+All the production is sold (Motivated by Market price and demand mostly)\n
+On average 2.2ha of Cashew, 54% of farmers are weeding through mowing/slashing and 62% are using 
+weaver ants to protect cashew trees against pests\n
+Normal density, around 200 trees/ha, Low yields (375 kg/ha/year)\n
+23.3% indicated it was requiring heavy fertilization to thrive\
+56.9% indicated it was requiring heavy use of pesticides to thrive\n
+\n
+Assumptions:\n
+- Plots of mature cashew plantation with low production, potentially because still young (less than 5 years)\n or because low soil fertility potential and management\n
+- Cashew = Cash crop for households")
+} else if(input$Cropsys_choice == "Cashew - Young plantations") {
+  cat("Information:\n
+Common cropping system (6.1% of the sample)\n
+Non-productive cashew plantation in the upland with no intercropping - Motivated by Market price and demand mostly\n
+On average 1.5ha of Cashew, 51% of farmers are weeding through mowing/slashing and 59% are using weaver ants to
+protect cashew trees against pests\n
+Normal density, around 200-300 trees/ha\n
+21.6% indicated it was requiring heavy fertilization to thrive /
+45.9% indicated it was requiring heavy use of pesticides to thrive
+\n
+Assumptions:\n
+- Plots of young non-productive cashew plantation with purpose to be cash crop for households, crop chosen because
+well adapted to local condition\n
+- Density seems to increase comparedd to mature plantation, which may indicate increasing investment by households 
+in the aim of higher production.")
+} else if(input$Cropsys_choice == "Upland rice monocropping") {
+  cat("Uncommon cropping system (8.5% of the sample)\n
+Upland rice monocropping in the upland,
+Almost all the production is self-consumed (23% of households concerned are selling it)\n
+Household consumption preference: 63.5%\n
+On average 1.1ha of Upland rice, 38% of farmers are weeding through mowing/slashing, 38% are using land levelling
+and 27% are using Animal manure\n
+Medium-low density: around 60-80 kg/ha, average/low yield (In all villages except Reaksmei, mostly around 1.5 t/ha,
+higher in Reaksmei)\n
+92.3% of households indicated that this Crops required more water than others
+21.2% indicated it was requiring heavy fertilization to thrive
+42.3% indicated it was requiring heavy use of pesticides to thrive\n
+\n
+Assumptions:\n
+- Upland rice grown as subsistence crop with low input use due to low soil potential/low investment capacity\n
+- Some households with larger lands are able to produce enough to sell a part of their production\n
+- Use of herbicides/mechanical weeding for households who are not using mowing/slashing\n
+- More common to use animal manure here compared to other upland crops\n
+- Possible that this crop is used in rotation with other upland crops (cassava, upland rice...)
+but the information was missed during the interview")
+} else if(input$Cropsys_choice == "Transplanted rice - household consumption") {
+  cat("Information:\n
+Medium-common cropping system (13% of households in this area), grown because of household consumption preferences\n
+0.5-1.5ha of transplanted rice, 66% of farmers build terraces, 72% use animal manure\n
+51% do land-leveling, 47% leave crop residues maintained to cover the soil and
+46% are mowing/slashing\n
+Low sowing amount (around 50-60 kg/ha), average yield (1.5-2.5 t/ha)\n
+No selling. Many households (almost 50%) think it requires important amount of fertilizer
+but lower for pesticides (around 20%)\n
+\n
+Assumptions:\n
+- Crop grown for household consumption first (150-200kg/hmember/year), no possibility of selling as not much land\n
+- Less seeds used and probably less use of herbicide than transplanted\n
+- Few fertilizers used out of animal manure")
+} else if(input$Cropsys_choice == "Transplanted rice - consumption and selling"){
+  cat("Information:\n
+Uncommon cropping system (8% of households in this area), grown because of household consumption preferences\n
+1-2ha of transplanted rice, 74% of farmers build terraces, 80% use animal manure,
+41% do land-leveling, 39% leave crop residues maintained to cover the soil and
+55% are mowing/slashing\n
+Low sowing amount (around 50-60 kg/ha), higher yield compared to this area (1.5-3.5 t/ha)\n
+Selling on average half of the harvest. Many households (43%) think it requires important amount of fertilizer 
+but lower for pesticides (around 20%)\n
+\n
+Assumptions:\n
+- Crop grown for household consumption first (150-200kg/hmember/year), larger land means possibility of sellings\n
+- Most productive local rice systems but probably more labor intensive\n
+- Less seeds used and probably less use of herbicide than transplanted\n
+- Few fertilizers used out of animal manure")
+} else if(input$Cropsys_choice == "Fruit trees - Young plantations"){
+  cat("Uncommon cropping system (0.7% of the sample)\n
+Fruit trees (Longan,Mangoes, Coconuts) in the upland, No production\n
+Motivated by Market price and demand mostly except for mangoes (household consumption preferences + well adapted)\n
+On average 1ha of Misc. fruit trees\n 
+Only mowing slashing for Longan, for Coconuts:
+- Water ponds, swales digging
+- Crop residues to cover the soil
+- Fertilization through animal manure, Recycling crop waste 	& Ramial Wood Chip (RWC) or other wood chips
+- Weeding through mowing/slashing\n
+For mangoes: Rainwater collection/conservation, Water-Ponds, Crop residues to cover the soil, Animal manure,
+Mowing / slashing\n
+High density:
+- 100 trees/ha for Mangoes and Longan
+- 200-300 trees/ha for Coconuts\n
+For most kind of fruits: requiring water, for longan only: requiring heavy fertilization\n
+\n
+Assumptions:\n
+- Fruit trees grown as cash crop by households with possibility to do so (knowledge, land, 
+labor force, value chain access...) with high density,\n with many practices associated related to watering,
+soil fertility and pest and disease management depending on the specie")}
+} else if(input$Sarea_choice == "Lao"){
+  if (input$Cropsys_choice == "Summer-autumn season rice with off-season vegetables"){
+cat("Information:\n
+Very common cropping system (39% of the households), grown because of household consumption preferences mainly (78%)
+but also for market price and demand (16%)\n
+0.5-2ha of rice (do not know if broadcasted or transplanted), 48% of farmers use animal manure,
+17% do swales digging\n
+Average sowing amount (around 80-120 kg/ha), high yield (3-5 t/ha)\n
+3/4 of the households are selling rice, on average 35% of the harvest. Many households (> 50%) think it requires important
+amount of fertilizer\n
+
+Vegetables/misc. crops are grown on the same plot, on lower area  on the same year (assumption), some are very common
+across the sample:
+- Garlic (31.5% of N study - For commercial and consumption purposes, >0.5 fertilize it with animal manure)
+- Chinese lettuce (16.4% of N study - For commercial and consumption purposes, >0.5 fertilize it with animal manure)
+- Chili (9.5% of N study -  For commercial and consumption purposes, >0.5 fertilize it with animal manure)
+
+Other species are less common:
+- Onions (4% of N study - Mainly for commercial purposes)
+- Coriander (2.2% of N study - Mainly for commercial purposes)
+- Peanut (2.2% of N study - For commercial purposes)
+- Cucumber (1.5% of N study - For commercial purpose)
+- Salad/lettuce (1.3% of N study - For commercial and consumption purposes)
+- Long bean (1.3% of N study - For commercial purposes)
+- Spring onions (0.9% of N study - For commercial purpose)
+- Cabbages (0.9% of N study - For commercial purpose)
+- Napa Cabbages (0.7% of N study - For commercial purpose)
+- Kale flower (0.7% of N study - For commercial and consumption purposes)
+- Chinese flowering Cabbages/ choysum (0.5% of N study - For commercial and consumption purposes)
+- Mustard greens (1.5% of N study - For commercial and consumption purpose, Animal manure for 50% of the sample)
+- Dill (0.2% of N study - For commercial purpose)
+- Red bell pepper (0.2% of N study - For commercial purpose)
+- Mung bean (0.2% of N study - For commercial purpose)
+- Carrot (0.2% of N study - For commercial purpose)
+- Hmong Cucumber (0.2% of N study - For commercial and consumption purposes)
+- gourd (0.2% of N study - For consumption purposes)
+
+AE practices are implemented for a non-negligible share of households for each crops, for water conservation
+(ponds, swales digging, rainwater collection), soil fertility (animal manure, compost) and weed management (misc.)
+
+\n
+Assumptions:\n
+- This cropping system is very common in area with good access to the lowland (Pek and Phoukoud district)
+- It aim to provide food for household consumption (rice and vegetables) and livelihood through the selling of 
+off-season vegetables which seems to be more a commercial crop, and rice surplus\n
+- AE practices are commonly used for rice and vegetables, by at least a share of the concerned farmers, as these
+cropping systems are central for household livelihood
+- No real clue about use of pesticides (herbicides), potential use of
+fertilizer despite animal manure is often used as yields seems important\n
+")
+} else if(input$Cropsys_choice == "Summer-autumn season rice"){
+  cat("Information:\n
+Very common cropping system (39% of the households), grown because of household consumption preferences mainly (78%)
+but also for market price and demand (16%)\n
+0.5-2ha of rice (do not know if broadcasted or transplanted), 43% of farmers use animal manure,
+28% do swales digging and 25% collect rainwater\n
+Average sowing amount (around 85-110 kg/ha), high yield (3-5 t/ha)\n
+Half of the households are selling rice, on average 40% of the harvest. Many households (> 50%) think it requires
+important amount of fertilizer\n
+
+Assumptions:\n
+- This cropping system is very common in area with good access to the lowland (Pek and Phoukoud district)
+- It aim to provide food for household consumption (rice) and livelihood through the selling of rice surplus\n
+- For now ni clue about why these households are not growing vegetables as the previous ones
+- No real clue about use of pesticides (herbicides), potential use of fertilizer despite animal manure is often used
+as yields seems important\n")
+} else if(input$Cropsys_choice == "Vegetables (lowland or upland)"){
+  cat("Information:\n
+  Vegetables/misc. crops grown on small area (various but around 0.2ha):
+
+- Chinese lettuce (4.2% of N study - Upland and lowland - For commercial and consumption purposes, 
+>0.5 fertilize it with animal manure)
+- Garlic (2.6% of N study - Upland and lowland - For commercial and consumption purposes, Animal manure used by >75%)
+- Chili (1.7% of N study - Upland or lowland -  For commercial and consumption purposes, 0.4-0.5 
+fertilize it with animal manure)
+- Onions (1.1% of N study - Mainly for commercial purposes, Animal manure for 100% of households)
+- Pumpkin (0.9% of N study - Upland - For commercial and consumption purposes)
+- Coriander (0.8% of N study - Upland and lowland - For commercial and consumption purposes, Animal manure 
+for 100% of households)
+- Napa Cabbages (0.7% of N study - For commercial purpose, Animal manure for 50% of households)
+- Cucumber (0.6% of N study - Upland & lowland - For commercial and consumption purposes, Animal manure 
+for 75% of households)
+- Chinese flowering Cabbages/ choysum  (0.2% of N study - Mainly for commercial purposes, Animal manure 
+for 100% of households)
+- Hmong Cucumber (0.4% of N study - For consumption purposes)
+- Eggplant (0.2% of N study - Upland - For consumption purposes)
+- Mustard greens (0.2% of N study - Upland - For consumption purposes)
+- Spring onions (0.2% of N study - For commercial purpose, 100% use animal manure)
+- Salad/lettuce (0.2% of N study - For commercial purpose, 100% use animal manure)
+- Kale flower (0.2% of N study - Upland - For commercial and consumption purposes, 100% use animal manure)
+- Long bean (0.2% of N study - Upland - For consumption purposes)
+- Taro (0.2% of N study - Upland - For commercial purposes)
+- Chinese plantain, leaves (0.2% of N study - For consumption purposes)
+
+AE practices are implemented for a non-negligible share of households for each crops in the lowland,
+less in the upland, for water conservation (ponds, swales digging, rainwater collection),
+soil fertility (animal manure, compost) and weed management (misc.)
+
+\n
+Assumptions:\n
+- Vegetables are grown for commercial and consumption purposes in lowland and upland areas\n
+- AE practices are commonly used for vegetables, by at least a share of the concerned farmers, as these cropping systems 
+are important for livelihood and self-sufficiency\n
+")
+} else if(input$Cropsys_choice == "Cassava monocropping"){
+  cat("Not represented enough to be detailed\n")
+} else if(input$Cropsys_choice == "Strawberry"){
+  cat("Information:\n
+  Strawberry grown on small area (various but around 0.02 - 0.1ha) by a small share of households in upland or lowland areas 
+(1.9% of households)\n
+Commercial crop moslty grown for commercial purposes\n
+50% of farmers use animal manure\n
+Many households (almost 50%) think it requires important amount of fertilizer\n
+
+Assumptions:\n
+- This cropping system is practiced by a small share of households in areas with access to lowland or upland for 
+commercial purpose\n")
+} else if(input$Cropsys_choice == "Fruit trees - Productive plantations"){
+cat("Information:\n
+Plum or Peaches grown on average area (various but around 0.5 - 1.5ha) by a small share of households (2% of households)
+, moslty grown for commercial purposes\n
+No AE practices except weeding\n
+
+Assumptions:\n
+- This cropping system is practiced by a small share of households for commercial purpose in areas including good upland 
+and lowland access (mostly Phoukoud and Pek\n")
+} else if(input$Cropsys_choice == "Peanut monocropping"){
+cat("Information:\n
+Crop grown on small area (various but around 0.2ha) by a small share of households (1.5% of households)
+, moslty grown for commercial purposes\n
+Few AE practices\n
+
+Assumptions:\n
+- This cropping system is practiced by a small share of households for commercial purpose in remote areas with mainly upland
+access (Pek district)\n")
+} else if(input$Cropsys_choice == "Job tears monocropping"){
+cat("Information:\n
+Crop grown on average area (various but around 1-1.5ha) by a medium share of households (5.3% of households)
+, moslty grown for commercial purposes\n
+Few AE practices for most of the growers\n
+
+Assumptions:\n
+- This cropping system is practiced by a medium share of households for commercial purpose in remote areas with mainly upland 
+access (Pek district)\n")
+} else if(input$Cropsys_choice == "Ginger monocropping"){
+cat("Information:\n
+Crop grown on average area (various but around 1ha) by a small share of households (2% of households)
+, moslty grown for commercial purposes (some plantations seems not productive)\n
+Few AE practices for most of the growers\n
+
+Assumptions:\n
+- This cropping system is practiced by a small share of households for commercial purpose in remote areas with mainly
+upland access (Pek district)\n")
+} else if(input$Cropsys_choice == "Upland rice monocropping"){
+cat("Information:\n
+Crop grown on average area (various but around 1ha) by an important share of households (14.6% of households)
+, moslty grown for consumption purposes\n
+Average sowing density (50-100) and yield (around 2.5 t/ha)\n
+26% of these households are selling a share of their production\n
+Few AE practices for most of the growers\n
+
+Assumptions:\n
+- This cropping system is practiced by most households in remote areas with mainly upland access (Pek district)
+as base of food system (equivalent of lowland rice in other districts\n
+- Some households have enough land to sell a small share of the production\n")
+} else if(input$Cropsys_choice == "Tea plantation"){
+cat("Information:\n
+Crop grown on average area (various but around 1ha) by an important share of households (13.5% of households)
+, moslty grown for commercial purposes\n
+91% of these households are selling a share of their production (there are unproductive plantation)\n
+Few AE practices for most of the growers\n
+
+Assumptions:\n
+- This cropping system is practiced by most households in areas with lowland and upland access(Phoukoud and Kham district) 
+as commercial crop\n
+- For now no clue about why only a share of households in these areas are growing tea, potentially because 
+of not enough land access ?\n")
+} else if(input$Cropsys_choice == "Traditionnal maize - consumption and selling"){
+cat("Information:\n
+Crop grown on small area (various but around 0.1ha) by a small share of households (1.1% of households), moslty grown for consumption  purposes\n
+No households are selling a part of their production\n
+50% of households are mowing/slashing\n
+Low yield: 2.5 t/ha\n
+
+Assumptions:\n
+- This cropping system is practiced by a small share of households in areas with lowland access (Phoukoud and Kham district)
+as consumption crop\n")
+} else if(input$Cropsys_choice == "Traditionnal maize - consumption"){
+cat("Information:\n
+Crop grown on small area (various but around 0.5ha) by a small share of households (1% of households),\n
+moslty grown for commercial purposes (All are selling, 80% of the production)\n
+Many AE practices, Water, soil fertility and weeding, 60% of households are using animal manure\n
+AVerage yield: 3.3 t/ha\n
+
+Assumptions:\n
+- This cropping system is practiced by a small share of households in areas with lowland access (Phoukoud and Kham district)
+as commercial crop\n")
+} else if(input$Cropsys_choice == "Hybrid maize - selling"){
+cat("Information:\n
+Crop grown on average area (around 2ha) by an important share of households (22% of households),
+moslty grown for commercial purposes\n
+Few AE practices\n
+Average yield: 4.4 t/ha\n
+
+Assumptions:\n
+- This cropping system is practiced by most households in remote areas with mostly upland access (Pek district) 
+as commercial crop\n
+- Potential use of herbicides and chemical fertilizer for fertility maintenance")}
+} else if(input$Sarea_choice == "Son La province"){
+  if (input$Cropsys_choice == "Rice with off-season vegetables") {
+cat("Information:\n
+Uncommon cropping system (1.4% of the sample), we assume vegetables and rice are grown on the same plot (not confirmed)\n
+FOR RICE:
+small area of rice: around 0.2ha (no details if broadcasted or transplanted), Few AE practices except biopesticides used by
+50% of households\n
+No part of the production is sold\n
+Average sowing amount for rice (around 80-100 kg/ha), high yield (around 6 t/ha)\n
+FOR VEGETABLES:
+-	Winter melon (0.4% of N study – 0.3ha – 100% of h are selling) – Ponds and rainwater collection for all households
+-	Cucumber (0.4% of N study – 0.3ha – Commercial 100%) – Ponds, biopesticides and pheromone traps for all households
+-	Pumpkin (0.2% of N study – 0.2ha – Commercial mostly) – Access to water through ponds 
+or natural water source for 100%
+
+Assumptions:\n
+- Rice grown for household consumption (150-200kg/hmember/year), small area but high yields showing high 
+labor/inputs investment on these plots\n
+- Use of pesticides (herbicides) and fertilizer likely as high yields and no animal manure use reported\n")}
+  if (input$Cropsys_choice == "Winter-spring season rice") {
+cat("Information:\n
+Uncommon cropping system (3.5% of the sample)
+Small area of rice: around 0.1ha (no details if broadcasted or transplanted),
+Patch/ban spraying practiced by >50% of households\n
+No part of the production is sold\n
+Sowing density highly variable for rice (75 to 200kg/ha), very high yields (around 7 t/ha)\n
+\n
+Assumptions:\n
+- Rice grown for household consumption (150-200kg/hmember/year), small area but high yields showing high 
+inputs/labor investment on these plots\n
+-Use of pesticides (herbicide if broadcasted) and fertilizers fairly likely as high yields and no animal manure use reported\n
+- Difficult to know why these households are growing only one rice cycle, maybe because of lack of access
+to water or lack of labor or no need of additionnal production\n")}
+    if (input$Cropsys_choice == "Summer-autumn season rice") {
+cat("Information:\n
+Moderately common cropping system (7% of the sample)
+average area of rice: around 0.35ha (no details if broadcasted or transplanted),
+Use of biopesticides and mulching for >20% of households\n
+No part of the production is sold\n
+Sowing density highly variable (50 to 150kg/ha), high yields (around 4.7 t/ha)\n
+\n
+Assumptions:\n
+- Rice grown for household consumption (150-200kg/hmember/year), small area but high yields showing high inputs/labor
+investment on these plots\n
+-Use of pesticides (herbicide if broadcasted) and fertilizers fairly likely as high yields and no animal manure use reported
+- Difficult to know why these households are growing only one rice cycle, maybe because of lack of access to water 
+or lack of labor or no need of additionnal production\n")}
+    if (input$Cropsys_choice == "Summer-autumn and winter-spring season rice") {
+cat("Information:\n
+Common cropping system (30.8% of the sample)
+Small area of rice: around 0.15ha for each kind (no details if broadcasted or transplanted),
+Few AE practices used\n
+A small part of the househols (20%) sell on average 50% of their production for both kind of rice\n
+SUMMER AUTUMN SEASON RICE:
+Sowing density highly variable (50 to 100kg/ha), high yields (around 5.5 t/ha)\n
+WINTER SPRING SEASON RICE:
+Sowing density highly variable (50 to 100kg/ha), high yields (around 6 t/ha)\n
+\n
+Assumptions:\n
+- Rice grown two times per year on the same plot for household consumption (150-200kg/hmember/year), small area
+but high yields (and double rice cycle) showing high inputs/labor investment on these plots\n
+-Use of pesticides (herbicide if broadcasted) and fertilizers fairly likely as high yields and no animal manure use reported\n
+- A part of the households are able to sell a part of their production as they produce enough for themself and a surplus,
+maybe they have access to higher area or can invest more labor/inputs on their land\n")}
+    if (input$Cropsys_choice == "Vegetables (lowland)") {
+cat("Information:\n
+Moderately common - 11.5% of h - Vegetables/misc. crops grown on small area (various but around 0.1-0.2ha):
+-	Cucumber (1% of N study - 0.1ha – Commercial 100%) - USe of animal manure and Access to water through ponds or
+natural water source for 2/3 – Biopesticides and pheromones trap for part of households
+-	Mustard greens (4% of N study – 0.07 ha – Commercial 100%) – Access to water through ponds or natural water source
+for 80%, animal manure for 50% and mowing/slashing for 2/3 – Biopesticides and bioherbicides for part of households
+-	Spring onions (7% of N study – 0.17ha – Commercial 100%) - Access to water through ponds or natural water source
+for >60% - Biopesticides and bioherbicides for part of households
+-	Coriander (2% of N study – 0.1ha – Commercial 100%) - Access to water through ponds or natural water source for 100%
+and mowing slashing for 2/3, biopesticides for 2/3 – Bioherbicides for part of households
+-	Chinese flowering cabbage/choysum (0.7% of N study – 0.05ha – Commercial 100%) - Access to water through ponds
+or natural water source for 100% and animal manure for 100%
+-	Cabbages (0.6% of N study – 0.6ha – Commercial 100%) – Rainwater collection/conservation, Animal manure,
+Bokashi (fermented organic matter), Bioherbicide, Biopesticide / organic pesticide for 100% of the
+households in these systems
+-	Winter melon (0.7% of N study – 0.25ha – Commercial 100%) – Rainwater collection for all and ponds for >50%
+-	Hmong mustard (5.3% of N study – 0.08ha – Commercial 100%) - Access to water through ponds or natural water source for 100%
+-	Tomato (1.3% of N study – 0.07ha – Commercial 100%) – Access to water through ponds or natural water source and
+use of Patch/ban spraying for weeds for 50%
+-	Local bean (0.7% of N study – 0.07ha – Commercial 100%) – Use of Patch/ban spraying for 100%
+-	Local mustard (1.3% of N study – 0.03ha – Commercial 100%) – Access to water through ponds or natural water source,
+use of animal manure and mowing slashing for 100% - Use of Bioherbicide, Biopesticide / organic pesticide 
+for 50% of the sample
+-	French bean (1.6% of N study – 0.35ha – Commercial 100%) – Many AE practices but for a small part of the sample
+-	Zucchini, common green, fruit (0.6% of N study – 0.35ha – Commercial 100%) – Rainwater collection/conservation,
+use of animal manure, bokashi (fermented organic matter), Bioherbicide and Biopesticide / organic pesticide 
+for 100% of households
+\n
+Assumptions:\n
+- Vegetables are grown for commercial purposes in lowland areas\n
+- AE practices are commonly used for vegetables, often by a majority of the concerned farmers, as these 
+cropping systems are important for livelihood\n")}
+    if (input$Cropsys_choice == "Vegetables (upland)") {
+cat("Information:\n
+Moderately common (16% of h) - Vegetables/misc. crops grown on medium area (various but around 0.2-1ha):
+-	Cabbages (4.9% of N study – 0.4 ha – Commercial 100%) – Animal manure and mowing/slashing for > 60% of households
+– Bokashi, biopesticides for part of households
+-	Cucumber (0.3% of N study – 0.2 ha – Commercial 100%) – water ponds, animal manure, mowing/slashing, biopesticides
+for 100% of households
+-	Potatoes (0.1% of N study – 0.3 ha – Commercial 100%) – Ponds, Swales digging, Crop residues maintained 
+to cover the soil, Animal manure, Bokashi (fermented organic matter), Biopesticide / organic pesticide 
+for 100% of the households
+-	Pumpkin (0.7% of N study – 1.11 ha – Most of the production is sold) - Rainwater collection/conservation,
+Swales digging, Crop residues maintained to cover the soil, Crop residue maintenance, Mowing / slashing 
+for app. 50% of the households
+-	Winter-melon (3.4% of N study – 0.4ha – Most of the production is sold) – Animal manure used by 50% 
+of the households\n
+\n
+Assumptions:\n
+- Vegetables are grown for commercial purposes in upland areas\n
+- AE practices are commonly used for vegetables, often by a majority of the concerned farmers, as these cropping
+systems are important for livelihood\n")}
+    if (input$Cropsys_choice == "Maize biomass (commercial)") {
+cat("Information:\n
+Crop grown in lowlands or uplands on average area (various but around 0.5-1 ha) by a small share of households
+(5% of households)\n
+Grown for commercial purposes (All are selling most of their production)\n
+Few AE practices, half of the
+households have access to water to grow this crop\n
+Average yield: 7 t/ha\n
+\n
+Assumptions:\n
+- Use of chemical fertilizer as no use of animal manure\n")}
+    if (input$Cropsys_choice == "Maize grain - Consumption") {
+cat("Information:\n
+Crop grown in lowlands or uplands on average area (0.1-1 ha) by a medium share of households (8% of households)\n
+Grown for consumption purposes only\n
+Few AE practices (reduced to no-tillage for 0.1 of them)\n
+Average yield: 6.5 t/ha\n
+
+Assumptions:\n
+- Use of corn to self-consume or feed the animals, not possible to sell some as not enough land
+- Use of chemical fertilizer as no use of animal manure\n")}
+    if (input$Cropsys_choice == "Maize grain - Consumption and selling") {
+cat("Information:\n
+Crop grown in lowlands or uplands on average area (1-2 ha) by an important share of households (39% of households)\n
+Grown for commercial purposes mainly (85% of the production is sold on average)\n
+Few AE practices (Patch/ban spraying use for weeding for 0.25 of them)\n
+Average yield: 8.5 t/ha\n
+\n
+Assumptions:\n
+- Corn is grown on large areas in the lowlands and uplands as a cash crop\n
+- Use of chemical fertilizer 
+as no use of animal manure and high yields, likely use of pesticides\n")}
+    if (input$Cropsys_choice == "Ginger monocropping") {
+cat("Information:\n
+Crop grown in uplands on small area (around 0.07 ha) by a small share of households (1.4% of households)\n
+Grown for commercial purposes only (all the production is sold)\n
+63% of households are mulching, 37% are doing agroforestry (trees + crops), 26% are using cover crops and biopesticide
+/ organic pesticide\n 
+\n
+Assumptions:\n")}
+      if (input$Cropsys_choice == "Tea plantation") {
+cat("Information:\n
+Crop grown on small area (around 0.5 ha) by a medium share of households (11.5% of households)\n
+Grown for commercial purposes only (all the production is sold) but there are also non-productive plantations\n
+Mowing/slashing for 50% of households \n 
+Many AE practices by a small share of households (<30% : Rainwater collection/conservation, Ponds
+(for water conservation),
+Sowing in contour lines, Animal manure, Bokashi (fermented organic matter), Patch/ban spraying, AEP Weed-Bioherbicide,
+Biopesticide / organic pesticide)\n
+\n
+Assumptions:
+- This crop is grown as cash crop by a minority of households as it requires access to the uplands
+- AE practices are commonly used for this crop as these cropping systems are important for household livelihood\n")}
+      if (input$Cropsys_choice == "Cassava monocropping - consumption & selling") {
+cat("Information:\n
+Crop grown on variable area (around 1-2ha in Tan Hop com. and around 0.5ha in other communes) by a high share
+of households (23.2% of households)\n
+Grown for commercial purposes mainly (96% of the production is sold)\n
+Rainwater collection/conservation
+for 44%\n
+High yield: 17.5 t/ha on average\n
+\n
+Assumptions:
+- This crop is grown as cash crop by a minority (but still important amount) of households as it requires access to the uplands\n
+- A small part of the production is self-consumed or used as animal feed\n
+- Likely use of chemical fertilizers as no other fertility management\n")}
+      if (input$Cropsys_choice == "Cassava monocropping - consumption") {
+cat("Information:\n
+Crop grown on small area (around 0.1ha) by a small share of households (2.4% of households)\n
+Grown for consumption purposes only, no share of the production is sold\n
+21% used Animal manure or patch/ban spraying\n
+High Yield: 25 t/ha\n
+\n
+Assumptions:
+- Crop grown by households with upland access as consumption crop\n
+- Likely use of chemical fertilizers as no other fertility management\n")}
+      if (input$Cropsys_choice == "Upland rice monocropping") {
+cat("Information:\n
+Crop grown on small area (around 0.2ha) by a small share of households (5.5% of households)\n
+Grown for consumption purposes only, no share of the production is sold\n
+No AE practice\n
+Medium sowing density: around 100 kg/ha and medium Yield: around 3.5 t/ha\n
+\n
+Assumptions:
+- Crop grown by households with upland access as consumption crop\n
+- Likely use of chemical fertilizer and herbicides as no other fertility and weed management practices\n")}
+      if (input$Cropsys_choice == "Arrowroot monocropping") {
+cat("Information:\n
+Crop grown on small area (around 0.2ha) by a small share of households (4.4% of households)\n
+Grown for commercial purposes mainly, some plantations seems not yet productive as only  90% of households are selling it\n
+AE practices for a small part of the households (Rainwater collection/conservation, Mulching,
+Patch/ban spraying and Mowing / slashing)\n
+\n
+Assumptions:\n")}
+      if (input$Cropsys_choice == "Fruit trees - Productive plantations") {
+cat("Information:\n
+Very common cropping system as 53% of the households have fruit trees (including productive and non-productive plantations) 
+on medium area (around 0.4-0.5ha)\n
+Grown for commercial purposes mainly as most of the production is sold for most of the different kinds of fruit trees\n
+Some species are common across the sample:\n
+- Apricot (7% if h – 0.37ha - 100% sold) – Mowing/slashing for 40% of households,
+A part of households are doing agroforestry and use of pulses\n
+- Plum (23.2% of h – 0.54 ha – almost 100% sold) - Mowing slashing for 36% of households
+Use of biopesticides and/or agroforestry\n
+- Mango (22.2% of h – 0.57 ha -  80% of households are selling) – Many AE practices for small part of the sample\n
+- Longan (21.7% of h – 0.7 ha – 95% of households are selling all of their production)
+Mowing/slashing for 54% of the sample, bioherbicides and biopesticides for small part of the sample\n
+Some species are less common:\n
+- Chayote (7.3% of h - 0.3 ha - Most households are selling most of their production)
+Animal manure and mowing/slashing used by >50% of the households, many other AE practices used by a small share of households\n
+- Avocado (3.4% of h - 0.035ha - 70% of households are selling their production)
+Use of ponds for 60% of households and mowing/slashing for 90% of them, many other AE practices for a small share of the sample\n
+- Coconut (2.1% of h - 0.2 ha - Commercial purpose only)
+42% of the households are mulching, many AE practices for a small part of the sample\n
+- peach (1.4% of h - 0.4 ha - 75% of households are selling all of their production)
+Use of ponds and mulching for almost 40% of households\n
+- Oranges (1.3% of h - 0.4 ha - Commercial purpose only)
+Ponds (for water conservation) and animal manure used by 76% of the households
+Reduced to no-tillage and mowing/slashing used by >50% of the households
+Other AE practices used by a small share of the sample\n
+- Passion fruit (0.3% of h - 0.15 ha - Commercial purpose only)
+Ponds used by 100% of h\n
+
+Assumptions:
+- Fruit trees grown as cash crop by half of total households, meaning it is a very important commercial crop in this area\n
+- Many AE practices associated related to watering, soil fertility and pest and disease management depending on the
+specie as important source of income for households\n
+- Few households are not selling while they have productive plantation meaning they likely self-consume their production\n")}
+     if (input$Cropsys_choice == "Fruit trees - Young plantations") {
+cat("Information:\n
+Very common cropping system as 53% of the households have fruit trees (including productive and non-productive
+plantations) on medium area (around 0.4-0.5ha)
+These plantation aren't yet productive
+Some species are common across the sample\n:
+- Apricot (6.3% if h – 0.35ha) – Mowing/slashing for 28% of households\n
+- Plum (6.1% of h – 0.2 ha) - Mowing slashing for 32% of households
+Agroforestry for 20%\n
+- Mango (7% of h – 0.15 ha) – Many AE practices for small part of the sample\n
+- Longan (4.8% of h – 0.2 ha) - Many AE practices for small part of the sample\n
+Some species are less common:\n
+- Avocado (1.4% of h - 0.35ha)
+Mowing/slashing for 25% of households\n
+- Jack fruit (1.2% of h - 0.04 ha)
+bioherbicide, mowing / slashing and biopesticide / organic pesticide 	used by 55% of these households\n
+- peach (1% of h - 0.1 ha) - Patch/ban spraying and Mowing / slashing for 50% of the households\n
+- Pomelos and grapefruit (0.2% of h - 0.015ha) - No AE practices\n
+
+Assumptions:\n
+- Fruit trees grown as cash crop by half of total households, meaning it is a very important commercial crop in this area,
+Here it is non-productive trees (likely young plantation)\n
+- Few AE practices associated contrarily to the productive plantations\n")}
+}else{
+    if (input$Cropsys_choice == "Rice with off-season vegetables") {
+cat("Information:\n
+Common cropping system (24.1% of the sample), we assume vegetables and rice are grown on the same plot (not confirmed)
+FOR RICE:
+small area of rice: around 0.2ha (no details if broadcasted or transplanted),
+It can be summer-autumn season
+rice or winter-spring season rice\n
+Animal manure used by 30% of households,Patch/ban spraying and biopesticides used by a small part of the households\n
+Half of their harvest sold by >40% of the households\n
+Average sowing amount for rice (around 100 kg/ha), high yield (around 5.4 t/ha)\n
+\n
+FOR VEGETABLES:
+- Cabbages (9.3% of h - 0.05ha - Commercial for most households) - Swales digging used by 31% of the households,
+animal manure used by 45% of the households, other AE practices used by a small share of the households\n
+- Sweet potatoes, tuber (5.7% of h - 0.23ha - 100% Commercial) - 34% of households use animal manure,
+other AE practices are used by a small share of households\n
+- Eggplant (4.8% of h - 0.08ha - 100% Commercial) - Around 30% of the h: Swales digging, Animal manure, Mowing / slashing\n
+-	Cucumber (2.6% of N study – 0.06ha – 100% of h are selling) – Animal manure used by 30% of the households,
+other AE practices used by small share of households\n
+- Spring onions (2% of N study - 0.016ha - Mostly a commercial crop) - 
+Swales digging, animal manure,
+Patch/ban spraying, Biopesticide / organic pesticide used by 34% of households, other AE practices used by small share of the sample\n
+- Cauliflowers, Broccoli (1.6% of h - 0.02ha - 100% Commercial) - Swales digging (66%), Animal manure (78%),
+Patch/ban spraying (56%), Biopesticide / organic pesticide (66%)\n
+- Pumpkin (1.5% of h - 0.13ha - 100% commercial) - Animal manure 	used by 79% and Patch/ban spraying used by 58% of households,
+Many other AE practices used by a small share of the households\n
+- Chinese kale/ Gailan (1.4% of h - 0.01ha - Commercial and self consumption purposes) - Few AE practices\n
+- Tomato (1.3% of h - 0.035ha - 100% commercial) - Swales digging and animal manure used by >50% of the households,
+other AE practices used by small share of the households\n
+- Hmong mustard (1.3% of h - 0.01ha - Commercial and self consumption purposes) - Ae practices used by a small share of the households\n
+-	Mustard greens (1.2% of N study – 0.015ha – Commercial and self consumption 50/50) – Animal manure used by 40% of
+the households, other AE practices used by small share of households\n
+- Garlic (0.7% of h - 0.015ha - Self consumption only) - Crop residues maintained to cover the soil for 53% of these households\n
+-	Mung bean (0.6% of N study – 0.025ha – Commercial and self consumption 50/50) – Animal manure and mowing/slashing
+used by 50% of the households%\n
+- Potatoes (0.6% of h - 0.05ha - 100% commercial) - Animal manure used by 50% of the households\n
+- Kudzu (0.6% of h - 0.014ha - Self-consumption only) - No AE practice\n
+- Chrysanthemum, leaves (0.5% of h - 0.02ha - Self-consumption) - Crop residues maintained to cover the soil and
+animal manure used by 34% of the households\n
+- Local mustard (0.5% of h - 0.01ha - Commercial and self-consumption purposes) - No AE practices\n
+- Chinese flowering Cabbages/ choysum (0.5% of h - 0.005 - Selling and self consumption) - Animal manure and
+Legume-based green manure for 37% of the households\n
+- Mustard (0.4% of h - 0.013ha - 100% commercial) - Animal manure and legume-based green manure for 50% of the households\n
+- Black bean (0.4% of h - 0.05ha - 100% commercial) - Patch/ban spraying used by 100% of the households/n
+- Lettuce, romaine, leaves (0.4% of h - 0.001ha - Commercial and self consumption purposes) - No AE practices\n
+- Long bean, Chinese (0.4% of h - 0.3ha - 100% commercial) - No AE practice\n
+- French bean (0.3% of h - 0.04ha - 100% commercial) - No AE practice\n
+- Carrot (0.3% of h - 0.02ha - 100% commercial) - Animal manure used by 100% of the households\n
+- Pak choy (0.3% of h - 0.01ha - Self consumption only) - Swales digging and mowing/slashing for 100% of the households\n
+- Winter melon (0.3% of h - 0.1ha - Commercial for most household) - Animal manure used by 100% of the households\n
+- Honeydew (0.3% of h - 0.03ha - 100% commercial) - No AE Practice\n
+- Basil, sweet, leaves (0.3% of h - 0.05ha - 100% Commercial) - For 100% of the households: Swales digging,
+Animal manure, Patch/ban spraying, Biopesticide / organic pesticide\n
+- Kidney bean (0.3% of h - 0.05ha - 100% Commercial) - For 100% of the households: Swales digging,
+Animal manure, Patch/ban spraying, Biopesticide / organic pesticide\n
+- Local bean (0.2% of h - 0.005ha - Commercial for most households) - No AE practices\n
+- Turmeric, root (0.2% of h - 0.1ha - 100% commercial) - Animal manure used by 100% of the households\n
+\n
+Assumptions:\n
+- Rice grown for household consumption (150-200kg/hmember/year), small area but high yields showing high
+labor/inputs investment on these plots\n
+- Use of pesticides (herbicides) and fertilizer likely as high yields and no animal manure use reported\n
+- Vegetables grown on the same plot for commercial purposes, high variety of vegetables\n
+- Many AE practices used for vegetables, as it seems to be an important crop for household income\n")}
+        if (input$Cropsys_choice == "Summer-autumn season rice") {
+cat("Information:\n
+Crop grown on small area (around 0.4ha) by a medium share of households (7% of households) (no details if
+broadcasted or transplanted)\n
+Grown for consumption purposes mainly (13% of h are selling it)\n
+Important sowing density:
+100-120 kg of seeds/ha , high yield: 4.6 t/ha\n
+Animal manure used by 20% of the households, other AE practices used by a small share of the households\n
+\n
+Assumptions:\n
+- Rice grown for household consumption (150-200kg/hmember/year), small area but high yields showing high
+inputs/labor investment on these plots\n
+-Use of pesticides (herbicide if broadcasted) and fertilizers fairly likely as high yields and only 1/3 of
+the households use animal manure\n
+- Difficult to know why these households are growing only one rice cycle, maybe because of lack of access to water
+or lack of labor or no need of additionnal production\n")}
+          if (input$Cropsys_choice == "Winter-Spring season rice") {
+cat("Information:\n
+Crop grown on small area (around 0.33ha) by a small share of households (2.4% of households) (no details
+if broadcasted or transplanted)\n
+Grown for consumption and commercial purposes (Half of the households are selling half of their production)\n
+Important sowing density: 90-130 kg of seeds/ha , very high yield: 5.5 t/ha\n
+Sowing in contour lines used by 35% of the households and animal manure used by 32% of the households\n
+\n
+Assumptions:\n
+- Rice grown for household consumption (150-200kg/hmember/year) and commercial purposes (for the surplus),
+small area but high yields showing high inputs/labor investment on these plots\n
+-Use of pesticides (herbicide if broadcasted) and fertilizers fairly likely as high yields and only 1/3 of
+the households use animal manure\n
+- Difficult to know why these households are growing only one rice cycle, maybe because of lack of access to water
+or lack of labor or no need of additionnal production\n")}
+            if (input$Cropsys_choice == "Summer-autumn and winter-spring season rice") {
+cat("Information:\n
+Crop grown on small area (around 0.2ha) by a large share of households (58% of households) (no details if
+broadcasted or transplanted)\n
+Two cycles of rice grown consecutively during winter-spring and then summer-autumn\n
+Grown for consumption and commercial purposes (Half of the households are selling half of their production for
+winter-spring and around 0.2/0.2 for summer-autumn which is lilely more self-consumed)\n
+Average sowing density: 80-100 kg of seeds/ha , very high yield: 5.6 t/ha\n
+Sowing in contour lines
+used by 37% of the households and mowing/slashing used by 26% of the households\n
+\n
+Assumptions:\n
+- Rice grown 2 times per year on the same plot, mainly for household consumption (150-200kg/hmember/year)
+and commercial purpose (for the surplus), small area but high yields showing high inputs/labor 
+investment on these plots\n
+-Use of pesticides (herbicide if broadcasted) and fertilizers fairly likely as high yields and only 1/3
+of the households use animal manure\n")}
+  if (input$Cropsys_choice == "Vegetables (upland)") {
+cat("Information:\n
+Common cropping system (1.5% of the sample) on small areas (0.01-0.05ha)\n
+Species concerned:
+- Sawtooth herb/culantro (0.3% of h - 0.01ha -100% commercial)
+100% of the households are practicing:
+Swales digging, Animal manure, Patch/ban spraying, Biopesticide / organic pesticide\n
+- Sweet potatoes, leaves (0.3% of h - 0.03ha - Self-consumption) - 100% of the households are practicing: 
+Patch/ban spraying and Biopesticide / organic pesticide
+- Kohlrabi (2.6% of h - 0.05ha - Commercial for most households) - Swales digging used by 40%, animal manure
+used by 56% and Patch/ban spraying used by 35% of the households, other AE practices used by a small share of the households\n
+- Eggplant (0.6% of h - 0.06ha - 100% commercial) - 100% of the households use: Patch/ban spraying and Biopesticide
+/ organic pesticide
+50% of the households use Rainwater collection/conservation and animal manure\n
+\n
+Assumptions:\n
+- These vegetables are mainly grown for commercial purposes but also self-consumed by some households\n
+- Many AE practices used for vegetables, as it seems to be an important crop for household income")}
+              if (input$Cropsys_choice == "Cassava monocropping") {
+cat("Information:\n
+Crop grown on medium area (around 1ha) by a large share of households (32.5% of households)\n
+Grown mainly for commercial purposes (92% of households are selling 90% of their production) a small part is self-consumed\n
+Sowing in contour lines and mowing/slashing for 1/3 of the households\n
+
+Average yield: 10 t/ha and variable but high sowing density\n
+\n
+Assumptions:\n
+- Cassava grown as cash crop with high density and medium yield\n
+- Use of herbicides/mechanical weeding for households who are not using mowing/slashing and fertilizers
+for those who do not use animal manure\n")}
+                if (input$Cropsys_choice == "Fruit trees - Productive plantations") {
+cat("Information:\n
+Uncommon cropping system as 2.6% of the households have fruit trees (including only productive fruit trees)
+on low area (around 0.02-0.2ha)\n
+Grown for commercial purposes mainly as most of the production is sold for most of the different kinds of fruit trees\n
+Include different species\n:
+- Bananas (0.4% of h – 0.02ha - 40% sold, part is self-consumed) – No AE practice\n
+- Littchi (0.3% of h – 0.08 ha – 100% Commercial) - Practiced by 100% of the households: Animal manure, Mowing / slashing and
+Use of biopesticides and/or agroforestry\n
+- Longan (0.4% of h - 0.2ha - 100% commercial) - Practiced by 100% of the households: Patch/ban spraying,
+Biopesticide / organic pesticide
+- Oranges (0.7% of h - 0.2ha - 100% commercial) - For 55% of the households: Patch/ban spraying, Biopesticide / organic pesticide
+For 45% of the households: Animal manure, Mowing/slashing
+- Peach (0.3% of h - 0.03ha - 100% commercial) - For 100% of the households: Swales digging, Animal manure,
+Nutrient placement,Patch/ban spraying,Biopesticide / organic pesticide 
+- Pomelos and grapefruit (1.1% of h - 0.14ha - 100% commercial) - For 2/3 of the households: Patch/ban spraying,
+Biopesticide / organic pesticide\n
+\n
+Assumptions:
+- Fruit trees grown as cash crop by few household, potential link with access to labor or land\n
+- Many AE practices associated highlighting it is likely an important source of income for households\n
+- Part self-consumed for bananas\n")}
+                  if (input$Cropsys_choice == "Fruit trees - Young plantations") {
+cat("Information:\n
+Uncommon cropping system as 0.7% of the households have young fruit trees
+on low area (around 0.3ha)\n
+No production yet, likely young plantation\n
+
+Include only one specie\n:
+- Pomelos and grapefruit, For 45% of the households: Animal manure and mowing/slashing\n
+\n
+Assumptions:
+- Fruit trees grown as cash crop by few household, potential link with access to labor or land\n
+- Less AE practices when compared with mature plantations\n")}
+                if (input$Cropsys_choice == "Upland rice monocropping") {
+cat("Information:\n
+Crop grown on medium area (around 0.4ha) by a small share of households (4.3% of households)\n
+Grown only for self-consumption purposes (no household is selling upland rice)\n
+Mowing/slashing used by 1/3 of the households\n
+Low yield: 2.7 t/ha and variable sowing density (\n
+\n
+Assumptions:\n
+- Upland rice grown for self-consumption with medium-low yield\n
+- Use of herbicides/mechanical weeding for households who are not using mowing/slashing and chemical
+fertilizers for those who do not use animal manure\n")}
+                  if (input$Cropsys_choice == "Maize grain - Consumption and selling") {
+cat("Information:\n
+Crop grown on small area (around 0.21ha) by an important share of households (21.2% of households)\n
+Grown moslty for commercial purposes (All households are selling on average 85% of their production)\n
+AE practices used by a small share of the households\n
+Average yield: 6.3 t/ha \n
+\n
+Assumptions:\n
+- Corn grown as a commercial crop with medium yields, grown on lowland and upland plots\n
+- Use of herbicides/mechanical weeding for households who are not using mowing/slashing and chemical
+fertilizers for those who do not use animal manure\n")}
+  if (input$Cropsys_choice == "Maize grain - Consumption") {
+cat("Information:\n
+Crop grown on small area (around 0.1ha) by an important share of households (19% of households)\n
+Grown moslty for self-consumption purposes\n
+AE practices used by a small share of the households\n
+Average yield: 5 t/ha \n
+\n
+Assumptions:\n
+- Corn grown as a commercial crop with medium yields, grown on lowland and upland plots\n
+- Use of herbicides/mechanical weeding for households who are not using mowing/slashing and chemical
+fertilizers for those who do not use animal manure\n")}
+    if (input$Cropsys_choice == "Maize biomass") {
+cat("Information:\n
+Crop grown on small area (around 0.14ha) by a small share of households (1.6% of households)\n
+Grown for commerical and/or self-consumption purposes (2/3 are sellig, on average half of the production)\n
+AE practices used by a small share of the households\n
+Average yield: 4 t/ha \n
+\n
+Assumptions:\n
+- Corn grown as a commercial crop and self-consumption (for animals) with medium yields, grown on
+lowland and upland plots\n
+- Use of herbicides/mechanical weeding for households who are not using mowing/slashing and chemical
+fertilizers for those who do not use animal manure\n")}
+}
+  })
+```
+
+
+# Cultivation {data-navmenu="Cropping systems"}
+
+## Row 1 {data-height=300}
+
+### **General**
+
+N Study area = **`r renderText({round(sum(All$SW_Weight[All$S_Area == input$Sarea_choice]), digits = 0)})`** / N Crop = **`r renderText({round(CropDesc$N[CropDesc$Sarea == input$Sarea_choice & CropDesc$Crop == input$Crop_choice], digits = 0)})`** / N cropsys = **`r renderText({round(Cropsys$N[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice], digits = 0)})`**\
+**`r renderText({Cropsys$PerCentofHouseholds[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`%** of households grow this crop in this cropping system (% of N Study area) \
+Average area = **`r renderText({round(Cropsys$'Area - m2'[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]/10000, digits = 3)})` ha**\
+\
+Main reason for growing this crop in this cropping system (% of N Crop):\
+Household consumption preference: **`r renderText({Cropsys$"Reason% - Household consumption preferences"[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`**%\
+Market price and demand: **`r renderText({Cropsys$"Reason% - Market price and demand"[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`**%\
+Well adapted to local conditions: **`r renderText({Cropsys$"Reason% - Well adapted to local conditions"[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`**%
+
+### **Main practices & AE practices implemented (>10% of N Crop)**
+```{r}
+renderTable({
+AEP <- as.data.frame(t(Cropsys[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice,c(39:97)]))
+colnames(AEP) <- "PerCent"
+AEP = dplyr::filter(AEP, as.numeric(PerCent) >= 0.1)
+AEP <- AEP %>% add_column("Category and practice" = rownames(AEP), .before = "PerCent")
+print(AEP)
+})
+```
+
+
+
+## Row 2 {data-height= 700}
+
+### **Sowing amount distribution**
+```{r}
+  RnV$RiceTot <- RnV$`Summer-autumn season rice` + RnV$`Winter-Spring season rice`
+  RnV$DR <- ifelse(RnV$`Summer-autumn season rice` > 0 & RnV$`Winter-Spring season rice` > 0, 1, 0)
+  Rid <- RnV$hhid_re2[RnV$RiceTot > 0 & RnV$Lowveggie == 0 & RnV$DR == 0]
+  RnVid <- RnV$hhid_re2[RnV$RiceTot > 0 & RnV$Lowveggie > 0]
+  Vid <- RnV$hhid_re2[RnV$RiceTot == 0 & RnV$Lowveggie > 0]
+  DRid <- RnV$hhid_re2[RnV$DR == 1 & RnV$Lowveggie == 0]
+renderPlotly({
+  columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("d2_ha134.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select("hhid_re2", all_of(columns_to_select), matches(input$Crop_choice))
+  Area <- Area[!is.na(Area[,5]),]
+    if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "No" | Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Norm" ){}else{
+      if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Cons"){
+        Area <- Area[is.na(Area[,10]) | Area[,10] == 0,] 
+         }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Sell"){
+          Area <- Area[Area[,10] > 0 & !is.na(Area[,10]),]
+           }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Prod"){
+            Area <- Area[Area[,14] > 0 & !is.na(Area[,14]),]
+             }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "NoProd"){
+              Area <- Area[is.na(Area[,14]) | Area[,14] == 0,]
+           }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "R"){
+            Area <- Area[Area$hhid_re2 %in% Rid,] 
+            }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "RnV"){
+             Area <- Area[Area$hhid_re2 %in% RnVid,]
+             }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "V"){
+              Area <- Area[Area$hhid_re2 %in% Vid,]
+              }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "VnR"){
+               Area <- Area[Area$hhid_re2 %in% RnVid & Area[,5] > 0,]
+              }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "DR"){
+               Area <- Area[Area$hhid_re2 %in% DRid & Area[,5] > 0,]
+               }else{
+                x <- strsplit(gsub("\"", "", Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]), ",")[[1]]
+                Area <- Area[Area$hhid_re2 %in% x,]  
+               }}
+    Area <- Area %>% 
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n", input$Cropsys_choice, "\n Sowing amount - N = ", round(Cropsys$N[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice], digits = 0)))+
+    theme(legend.position='none', plot.title = element_text(size = 10))+
+    ylab(Cropsys$MSeedUnit[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice])+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+### **Area distribution**
+```{r}
+renderPlotly({
+  columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("d2_132.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select("hhid_re2", all_of(columns_to_select), matches(input$Crop_choice))
+  Area <- Area[!is.na(Area[,5]),]
+    if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "No" | Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Norm" ){}else{
+      if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Cons"){
+        Area <- Area[is.na(Area[,10]) | Area[,10] == 0,] 
+         }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Sell"){
+          Area <- Area[Area[,10] > 0 & !is.na(Area[,10]),]
+           }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Prod"){
+            Area <- Area[Area[,14] > 0 & !is.na(Area[,14]),]
+             }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "NoProd"){
+              Area <- Area[is.na(Area[,14]) | Area[,14] == 0,]
+           }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "R"){
+            Area <- Area[Area$hhid_re2 %in% Rid,] 
+            }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "RnV"){
+             Area <- Area[Area$hhid_re2 %in% RnVid,]
+             }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "V"){
+              Area <- Area[Area$hhid_re2 %in% Vid,]
+              }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "VnR"){
+               Area <- Area[Area$hhid_re2 %in% RnVid & Area[,5] > 0,]
+              }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "DR"){
+               Area <- Area[Area$hhid_re2 %in% DRid & Area[,5] > 0,]
+               }else{
+                x <- strsplit(gsub("\"", "", Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]), ",")[[1]]
+                Area <- Area[Area$hhid_re2 %in% x,]  
+               }}
+    Area <- Area %>% 
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n", input$Cropsys_choice, "\n Area (m2) - N = ", round(Cropsys$N[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice], digits = 0)))+
+    theme(legend.position='none', plot.title = element_text(size = 10))+
+    ylab("Area (m2)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+# Production, selling and additionnal {data-navmenu="Cropping systems"}
+
+## Row 1 {data-height=300}
+
+### **Production and selling**
+**`r renderText({Cropsys$PerCentSellers[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`%** of households (% of N crop) are selling **`r renderText({input$Crop_choice})`** (Form = **`r renderText({Cropsys$MFormWhenSold[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]})`** - **`r renderText({Cropsys$PerCentMFormWhenSold[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]})`**)
+```{r}
+renderTable({
+  Prod <- as.data.frame(t(Cropsys[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice,c(15,22:23,25:26)]))
+  colnames(Prod) <- "Average"
+  Prod <- Prod %>% add_column("Production & selling" = rownames(Prod), .before = "Average")
+print(Prod)
+})
+```
+
+### **Perception of cultivation requirements**
+**`r renderText({Cropsys$"Obs-Crops requiring more water than others"[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`**% of households indicated that this Crops required more water than others\
+**`r renderText({Cropsys$"Obs-Crops requiring heavy fertilization to thrive"[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`**% indicated it was requiring heavy fertilization to thrive\
+**`r renderText({Cropsys$"Obs-Crops requiring heavy use of pesticides to thrive"[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]*100})`**% indicated it was requiring heavy use of pesticides to thrive
+
+## Row 2 {data-height= 700}
+
+### **Yield distribution**
+```{r}
+renderPlotly({
+  columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("d2_ha135.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select("hhid_re2", all_of(columns_to_select), matches(input$Crop_choice))
+  Area <- Area[!is.na(Area[,5]),]
+    if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "No" | Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Norm" ){}else{
+      if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Cons"){
+        Area <- Area[is.na(Area[,10]) | Area[,10] == 0,] 
+         }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Sell"){
+          Area <- Area[Area[,10] > 0 & !is.na(Area[,10]),]
+           }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Prod"){
+            Area <- Area[Area[,14] > 0 & !is.na(Area[,14]),]
+             }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "NoProd"){
+              Area <- Area[is.na(Area[,14]) | Area[,14] == 0,]
+           }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "R"){
+            Area <- Area[Area$hhid_re2 %in% Rid,] 
+            }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "RnV"){
+             Area <- Area[Area$hhid_re2 %in% RnVid,]
+             }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "V"){
+              Area <- Area[Area$hhid_re2 %in% Vid,]
+              }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "VnR"){
+               Area <- Area[Area$hhid_re2 %in% RnVid & Area[,5] > 0,]
+              }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "DR"){
+               Area <- Area[Area$hhid_re2 %in% DRid & Area[,5] > 0,]
+               }else{
+                x <- strsplit(gsub("\"", "", Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]), ",")[[1]]
+                Area <- Area[Area$hhid_re2 %in% x,]  
+               }}
+    Area <- Area %>% 
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n", input$Cropsys_choice, "\n Yield distribution - N = ", round(Cropsys$N[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice], digits = 0)))+
+    theme(legend.position='none', plot.title = element_text(size = 10))+
+    ylab("Yield (kg/ha)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+### **Gross product/ha distribution**
+```{r}
+renderPlotly({
+  columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("Grossproductha.",input$Crop_choice)
+  Area <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select("hhid_re2", all_of(columns_to_select), matches(input$Crop_choice))
+  Area <- Area[!is.na(Area[,5]),]
+    if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "No" | Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Norm" ){}else{
+      if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Cons"){
+        Area <- Area[is.na(Area[,10]) | Area[,10] == 0,] 
+         }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Sell"){
+          Area <- Area[Area[,10] > 0 & !is.na(Area[,10]),]
+           }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "Prod"){
+            Area <- Area[Area[,14] > 0 & !is.na(Area[,14]),]
+             }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "NoProd"){
+              Area <- Area[is.na(Area[,14]) | Area[,14] == 0,]
+           }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "R"){
+            Area <- Area[Area$hhid_re2 %in% Rid,] 
+            }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "RnV"){
+             Area <- Area[Area$hhid_re2 %in% RnVid,]
+             }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "V"){
+              Area <- Area[Area$hhid_re2 %in% Vid,]
+              }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "VnR"){
+               Area <- Area[Area$hhid_re2 %in% RnVid & Area[,5] > 0,]
+              }else if(Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice] == "DR"){
+               Area <- Area[Area$hhid_re2 %in% DRid & Area[,5] > 0,]
+               }else{
+                x <- strsplit(gsub("\"", "", Cropsys$Process[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice]), ",")[[1]]
+                Area <- Area[Area$hhid_re2 %in% x,]  
+               }}
+    Area <- Area %>% 
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(Area, aes(x = Area[,1], y = Area[,2], fill = Area[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Crop_choice,"\n", input$Cropsys_choice, "\n Gross product ($/ha) - N = ", round(Cropsys$N[Cropsys$Sarea == input$Sarea_choice & Cropsys$Crop == input$Crop_choice & Cropsys$Cropsys == input$Cropsys_choice], digits = 0)))+
+    theme(legend.position='none', plot.title = element_text(size = 10))+
+    ylab("$/ha")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+# AE characteristics {data-navmenu="Cropping systems"}
+
+```{r}
+renderTable({
+  AEchar <- as.data.frame(Cropsyssum[Cropsyssum$Sarea == input$Sarea_choice,])
+print(AEchar)
+})
+```
+
+
+# Raising {data-navmenu="Animals"}
+
+## Row 1 {data-height=400}
+
+### **General**
+
+N Study area = **`r renderText({round(sum(All$SW_Weight[All$S_Area == input$Sarea_choice]), digits = 0)})`** / N Animal = **`r renderText({AnimalDesc$N[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]})`**\
+**`r renderText({AnimalDesc$PerCentofHouseholds[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** of households raise this animal specie (% of N Study area) \
+Average number of adults = **`r renderText({round(AnimalDesc$NbHeadAdult[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice], digits = 2)})`**\
+Number of breeds grown: **`r renderText({round(AnimalDesc$NbBreeds[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice], digits = 2)})`**\
+% of breeds raised that are local: **`r renderText({AnimalDesc$LocalBreedPerCent[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%**\
+**`r renderText({AnimalDesc$CrossingBreedPerCent[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** of households cross local breeds with other kind of breeds for this animal specie
+
+### **Raising system**
+<span style="color:red; font-style:italic">For pigs and chicken only:</span>\
+```{r}
+poultry <- c("Duck or/and Muscovy","Chicken","Other poultry","Goose")
+renderTable({
+  if(input$Animal_choice == "Pig"){
+  Raisys <- as.data.frame(t(AnimalDesc[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice,117:120]))
+  colnames(Raisys) <- "Households (% of N Animal)"
+  rownames(Raisys) <- str_replace(rownames(Raisys), "PigRaisingSystem - ", "")
+  Raisys <- Raisys %>% add_column("Raising system" = rownames(Raisys), .before = "Households (% of N Animal)")
+print(Raisys)    
+  } else if(input$Animal_choice %in% poultry){
+   Raisys <- as.data.frame(t(AnimalDesc[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice,122:125]))
+  colnames(Raisys) <- "Households (% of N Animal)"
+  rownames(Raisys) <- str_replace(rownames(Raisys), "PoultryRaisingSystem - ", "")
+  Raisys <- Raisys %>% add_column("Raising system" = rownames(Raisys), .before = "Households (% of N Animal)")
+print(Raisys)
+  } else {}
+
+})
+```
+
+## Row 2 {data-height=600}
+
+### **Headcounts**
+
+Number of head (adult): **`r renderText({AnimalDesc$NbHeadAdult[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]})`**\
+<span style="color:red; font-style:italic">For cattle, buffalo, pigs, goats and sheeps only:</span>\
+Number of head (young): **`r renderText({AnimalDesc$NbHeadYoung[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]})`**
+
+<span style="color:red; font-style:italic">For cattle/buffalo, the following information are tri-annual, for other animal species it is per year:</span>
+```{r}
+renderTable({
+  Headcount <- as.data.frame(t(AnimalDesc[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice,c(11:14,18)]))
+  colnames(Headcount) <- "Average"
+  Headcount <- Headcount %>% add_column("Category" = rownames(Headcount), .before = "Average")
+print(Headcount)
+})
+```
+
+### **Headcount distribution**
+```{r}
+renderPlotly({
+  a <- c("Buffalo","Cattle","Pig","Goat","Sheep","Horse","Rabbit","Chicken","Duck or/and Muscovy","Goose","Other cattle","Other poultry")
+  b <- c("e3_1","e3_3","e3_5","e3_7","e3_9","e3_11","e3_12","e3_13","e3_14","e3_16","e3_98","e3_99")
+  Colnam <- as.data.frame(cbind(a,b))
+   columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  Headcount <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select(all_of(columns_to_select), all_of(Colnam[Colnam$a == input$Animal_choice,2]))
+  ggplotly(
+    ggplot(Headcount, aes(x = Headcount[,1], y = Headcount[,2], fill = Headcount[,1])) + 
+    geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Animal_choice,"\n Nb of head (Adult) - N = ", round(AnimalDesc$N[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice], digits = 0)))+
+    theme(legend.position='none', plot.title = element_text(size = 12))+
+    ylab("Nb of head (Adult)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+
+# Feeding {data-navmenu="Animals"}
+
+### **Animals location**
+<span style="color:red; font-style:italic">For Cattle, Buffalo, Pigs and Poultry only:</span>\
+- **`r renderText({AnimalDesc$DrySeasonGrazing[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** of households (% of N animal) put different breeds to graze together during dry season\
+- **`r renderText({AnimalDesc$WetSeasonGrazing[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** of households (% of N animal) put different breeds to graze together during rainy season
+
+```{r}
+renderTable({
+  DrD <- as.data.frame(t(AnimalDesc[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice,44:48]))
+  DrN <- as.data.frame(t(AnimalDesc[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice,49:53]))
+  WtD <- as.data.frame(t(AnimalDesc[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice,67:71]))
+  WtN <- as.data.frame(t(AnimalDesc[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice,72:76]))
+  Tot <- cbind(DrD,DrN,WtD,WtN)
+  rownames(Tot) <- str_replace(rownames(Tot), "Dry season day - ", "")
+  colnames(Tot) <- c("Dry season - Day","Dry season - Night","Wet season - Day","Wet season - Night")
+  Tot <- Tot %>% add_column("Places" = rownames(Tot), .before = "Dry season - Day")
+print(Tot)
+})
+```
+
+
+### **Animals feed**
+<span style="color:red; font-style:italic">For Cattle, Buffalo, Pigs and Poultry only:</span>\
+- Use of concentrate from the farm (% of N Animal): **`r renderText({AnimalDesc$'ConcentrateUse - From farm'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%**\
+- Use of concentrate from the market: **`r renderText({AnimalDesc$'ConcentrateUse - From market'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%**
+
+
+```{r}
+renderTable({
+  DrFe <- as.data.frame(t(AnimalDesc[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice,c(55:65,121,66)]))
+  WtFe <- as.data.frame(t(AnimalDesc[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice,78:90]))
+  Tot <- cbind(DrFe,WtFe)
+  rownames(Tot) <- str_replace(rownames(Tot), "Dry season day - ", "")
+  colnames(Tot) <- c("Dry season feeding","Wet season feeding")
+  Tot <- Tot %>% add_column("Feed" = rownames(Tot), .before = "Dry season feeding")
+  Tot <- Tot %>%
+    filter(!is.na(`Dry season feeding`) & !is.na(`Wet season feeding`), rowSums(Tot[,2:3]) != 0)
+print(Tot)
+})
+```
+
+
+# Care {data-navmenu="Animals"}
+
+### **Parasites & diseases**
+<span style="color:red; font-style:italic">For Cattle, Buffalo, Pigs and Poultry only:</span>
+
+Households facing problems with animal diseases (% of N Animal): **`r renderText({AnimalDesc$Diseases[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%**
+
+Household facing problems with animal parasites (% of N Animal):
+```{r}
+renderTable({
+  Para <- as.data.frame(t(AnimalDesc[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice,c(93:95)]))
+  rownames(Para) <- str_replace(rownames(Para), "Parasites - ", "")
+  colnames(Para) <- "households concerned (% of N Animal)"
+  Para <- Para %>% add_column("Parasite kind" = rownames(Para), .before = "households concerned (% of N Animal)")
+print(Para)
+})
+```
+
+
+### **Care and antibiotics**
+<span style="color:red; font-style:italic">For Cattle, Buffalo, Pigs and Poultry only:</span>\
+
+Treatment used for animals care (% of N Animal):
+
+- **`r renderText({AnimalDesc$'Care - Traditional treatment'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** of households are using traditional treatments
+- **`r renderText({AnimalDesc$'Care - Chemicals'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** of households are using chemicals
+
+Reasons for using a traditionnal or chemical treatment (% of N Animal):
+
+- **`r renderText({AnimalDesc$'CareReasonYes - Better for environment/ AE'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** used a treatment because they thought it is better for environment
+- **`r renderText({AnimalDesc$'CareReasonYes - Human health'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** used a treatment because they thought it is better for human health
+- **`r renderText({AnimalDesc$'CareReasonYes - Treatment / prevention'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** used a treatment to solve existing issues or prevent future issues
+
+Reasons for not using a traditionnal or chemical treatment (% of N Animal):
+
+- **`r renderText({AnimalDesc$'CareReasonNo - Not available on the market'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** did not use a treatment because it was not available on the market
+- **`r renderText({AnimalDesc$'CareReasonNo - Too expensive'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** did not use a treatment because it was too expensive
+- **`r renderText({AnimalDesc$'CareReasonNo - No need, not severe disease'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** did not use a treatment because there was no severe disease
+- **`r renderText({AnimalDesc$'CareReasonNo - Too difficult to handle animal or no VT service'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** did not use a treatment because there was no VT service or it was too difficult to handle animal
+
+Use of antibiotics (% of N Animal):
+
+- **`r renderText({AnimalDesc$'Antibiotics - For treatment diseases only'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** used antibiotics as a treatment for diseases
+- **`r renderText({AnimalDesc$'Antibiotics - For prevention of diseases only'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** used antibiotics to prevent diseases
+- **`r renderText({AnimalDesc$'Antibiotics - For growth promotion'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** used antibiotics to promote animal growth
+
+Reasons given by households who used antibiotics (% of N Animal):
+
+- **`r renderText({AnimalDesc$'AntibioticsReasonYes - Better for environment/ AE'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** used antibiotics for positive effect on environment/AE
+- **`r renderText({AnimalDesc$'AntibioticsReasonYes - Human health'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** used antibiotics for positive effect on human health
+- **`r renderText({AnimalDesc$'AntibioticsReasonYes - Treatment / prevention'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** used antibiotics to solve existing issues or prevent future issues
+
+Reasons given by households who did not use antibiotics (% of N Animal):
+
+- **`r renderText({AnimalDesc$'AntibioticsReasonNo - Not available on the market'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** did not use antibiotics as it was not available on the market
+- **`r renderText({AnimalDesc$'AntibioticsReasonNo - Too expensive'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** did not use antibiotics as it was too expensive
+- **`r renderText({AnimalDesc$'AntibioticsReasonNo - Already include in the feed'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** did not use antibiotics as it was already included in the feed
+- **`r renderText({AnimalDesc$'AntibioticsReasonNo - No need, not severe disease'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** did not use antibiotics as there was no severe disease
+- **`r renderText({AnimalDesc$'AntibioticsReasonNo - Too difficult to handle animal or no VT service'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** did not use antibiotics as there was no VT service or it was too difficult to handle animals
+
+# Production {data-navmenu="Animals"}
+
+## Row 1 {data-height=500}
+
+### **Production details**
+**`r renderText({AnimalDesc$HouseholdsSellingPerCent[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%** of households (% of N Animal) sold animals during the past year (or 3 last years for cattle/buffalo) 
+
+<span style="color:red; font-style:italic">For cattle/buffalo, the following information are tri-annual, for other animal species it is per year:</span>
+```{r}
+renderTable({
+  Prod <- as.data.frame(t(AnimalDesc[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice,c(14:15,17,16,18:20)]))
+  rownames(Prod)[7] <- "Gross product ($/year - 3years for cattle/buffalo)"
+  colnames(Prod) <- "Values"
+  Prod <- Prod %>% 
+    add_column("Characteristics" = rownames(Prod), .before = "Values")
+print(Prod)
+})
+```
+
+### **Buying price distribution**
+```{r}
+renderPlotly({
+   columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("e5_51.",input$Animal_choice)
+  BuyPrice <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(BuyPrice, aes(x = BuyPrice[,1], y = BuyPrice[,2], fill = BuyPrice[,1])) +     geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Animal_choice,"\n Buying price ($ per head or kg) - N = ", round(AnimalDesc$N[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice], digits = 0)))+
+    theme(legend.position='none', plot.title = element_text(size = 12))+
+    ylab("Buying price ($ per head or kg)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+## Row 2 {data-height=500}
+
+### **Amount sold distribution (nb of head/year - /3 years for cattle/buffalo)**
+```{r}
+renderPlotly({
+   columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("e5_4.",input$Animal_choice)
+  BuyPrice <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(BuyPrice, aes(x = BuyPrice[,1], y = BuyPrice[,2], fill = BuyPrice[,1])) +     geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Animal_choice,"\n Amount sold (number of head) - N = ", round(AnimalDesc$N[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice], digits = 0)))+
+    theme(legend.position='none', plot.title = element_text(size = 12))+
+    ylab("Amount sold (number of head)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+### **Gross product distribution ($)**
+```{r}
+renderPlotly({
+   columns_to_select <- ifelse(input$Sarea_choice == "Lao",     "district_eng_preload","commune_eng_preload")
+  xlab <- ifelse(input$Sarea_choice == "Lao", "District","Commune")
+  pattern <- paste0("e5_43.",input$Animal_choice)
+  BuyPrice <- All %>% 
+    filter(S_Area == input$Sarea_choice) %>%
+      select(all_of(columns_to_select), starts_with(pattern))
+  ggplotly(
+    ggplot(BuyPrice, aes(x = BuyPrice[,1], y = BuyPrice[,2], fill = BuyPrice[,1])) +     geom_boxplot() + 
+    ggtitle(paste(input$Sarea_choice," - ",input$Animal_choice,"\n Gross product ($) - N = ", round(AnimalDesc$N[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice], digits = 0)))+
+    theme(legend.position='none', plot.title = element_text(size = 12))+
+    ylab("Gross product ($)")+
+    xlab(xlab)+
+    scale_fill_viridis_d()
+  )
+})
+```
+
+
+# Outlet/Buyer {data-navmenu="Animals"}
+
+## Row 1 {data-height=500}
+
+### **Buyers/Outlets** (For all parts on this page values are % of N animal, no % of sellers)
+```{r}
+renderTable({
+  Buyer <- as.data.frame(t(AnimalDesc[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice,c(21:28)]))
+  rownames(Buyer) <- str_replace(rownames(Buyer), "Main outlet - ", "")
+  colnames(Buyer) <- "households concerned (% of N Animal)"
+  Buyer <- Buyer %>% 
+    add_column("Outlet-Buyer" = rownames(Buyer), .before = "households concerned (% of N Animal)") %>% filter(`households concerned (% of N Animal)` > 0)
+print(Buyer)
+})
+```
+
+### **Provided by Buyer/Outlet**
+```{r}
+renderTable({
+  ProvBuy <- as.data.frame(t(AnimalDesc[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice,c(33:39)]))
+  rownames(ProvBuy) <- str_replace(rownames(ProvBuy), "ProvidedBuyer", "")
+  colnames(ProvBuy) <- "households concerned (% of N Animal)"
+  ProvBuy <- ProvBuy %>% 
+    add_column("Provided by Outlet/Buyer" = rownames(ProvBuy), .before = "households concerned (% of N Animal)") %>% filter(`households concerned (% of N Animal)` > 0)
+print(ProvBuy)
+})
+```
+
+## Row 2 {data-height=500}
+
+### **% of production sold to the main outlet:**
+- 0-25%: **`r renderText({AnimalDesc$'ShareSoldMainOutlet - Less than 25%'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%**
+- 25-50%: **`r renderText({AnimalDesc$'ShareSoldMainOutlet - 25-50%'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%**
+- 50-75%: **`r renderText({AnimalDesc$'ShareSoldMainOutlet - 50-75%'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%**
+- 75-100% :**`r renderText({AnimalDesc$'ShareSoldMainOutlet - Over 75%'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%**
+
+### **Kind of contracts**
+- Formal contract: **`r renderText({AnimalDesc$'ContractKind - Formal contract'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%**
+- Informal contract: **`r renderText({AnimalDesc$'ContractKind - Informal contract'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%**
+- No contract/no prior arrangements: **`r renderText({AnimalDesc$'ContractKind - No contract/ no prior arrangements'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%**
+- Spot relations:**`r renderText({AnimalDesc$'ContractKind - Spot relations'[AnimalDesc$S_Area == input$Sarea_choice & AnimalDesc$specie == input$Animal_choice]*100})`%**
+
+# Overview {data-navmenu="Raising systems"}
+```{r}
+output$image2 <- renderImage({
+  switch(input$Sarea_choice,
+         "Cambodia" = list(src = "AnimSysOverview_Camb.jpg", width = "90%"),
+         "Lao" = list(src = "AnimSysOverview_Laos.jpg", width = "90%"),
+         "Son La province" = list(src = "AnimSysOverview_SL.jpg", width = "90%"),
+         "Dien Bien province" = list(src = "AnimSysOverview_DB.jpg", width = "90%"))
+}, deleteFile = FALSE)
+
+imageOutput("image2")
+```
+
+

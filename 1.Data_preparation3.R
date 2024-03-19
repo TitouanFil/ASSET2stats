@@ -9,8 +9,12 @@ library(plyr)
 library(reshape2)
 library(tidyverse)
 library(purrr)
+library(doBy)
+library(survey)
 #Options
 options(warn=1)
+
+2281
 
 #Work directory and data loading (for the 3  countries)
 #We use the output datasets which were displayed during previous mission
@@ -32,6 +36,10 @@ HouseholdVietnam_TF <- readRDS("HouseholdVietnam_TF.rds")
 ClowlandVietnam_TF <- readRDS("ClowlandVietnam_TF.rds")
 CuplandVietnam_TF <- readRDS("CuplandVietnam_TF.rds")
 HouMemberVietnam_TF <- readRDS("HouMemberVietnam_TF.rds")
+#Import of sampling weight file
+setwd("C:/Users/titou/OneDrive/Bureau/ASSET Stats/WORKDIRECTORY/2.ASSET_practices&Perf-Titouan2024/ASSET2stats")
+SWeight <- read.csv2("SWeight.csv")
+
 
 ###2. Data preparation
 #Let's create a common database for each countries with all the data we
@@ -225,7 +233,7 @@ for (i in c(x$hhid_re2)){
   }
 }
 
-#Correction #2
+#Correction #2 (Misc. corrections, mainly about area and yield stuffs)
 x <- rbind(HouseholdCambodia_TF[,c(1,18)], HouseholdLaos_TF[,c(1,17)], HouseholdVietnam_TF[,c(1,18)])
 colnames(x)[1] <- "hhid_re2"
 dcrop <- left_join(dcrop,x, by = "hhid_re2")
@@ -280,7 +288,6 @@ dcrop$d2_134 <- ifelse(dcrop$d2_13e == "lowlWinter melon", dcrop$d2_134/10, dcro
 dcrop$d2_135 <- ifelse(dcrop$pid == "3552 2", 20, dcrop$d2_135) 
 dcrop$d2_135 <- ifelse(dcrop$pid == "589 3", 1000, dcrop$d2_135) 
 dcrop$d2_135 <- ifelse(dcrop$pid == "642 3", 800, dcrop$d2_135) 
-
 dcrop$d2_132 <- ifelse(dcrop$d2_13e == "lowlCoriander" & dcrop$country_eng_preload == "Vietnam",
                           dcrop$d2_132*10, dcrop$d2_132)
 dcrop$d2_132 <- ifelse(dcrop$d2_13e == "uplnPeanut" &
@@ -290,7 +297,29 @@ dcrop$d2_132 <- ifelse(dcrop$d2_13e == "uplnPeanut" &
 dcrop$d2_132 <- ifelse(dcrop$d2_13e == "Hmong mustard" &
                          dcrop$d2_132 < 100, dcrop$d2_132*10, dcrop$d2_132)
 dcrop$d2_136 <- ifelse(dcrop$d2_136 > dcrop$d2_135, dcrop$d2_135, dcrop$d2_136)
+#Correction #3
+dcrop$d2_135 <- ifelse((dcrop$d2_13e == "Summer-autumn season rice"| dcrop$d2_13e == "Winter-Spring season rice" | dcrop$d2_13e == "maize_hybrid") & dcrop$d2_135 / dcrop$d2_132 > 4,
+                       dcrop$d2_135 / 100, dcrop$d2_135)
+dcrop$d2_135 <- ifelse((dcrop$d2_13e == "Summer-autumn season rice"| dcrop$d2_13e == "Winter-Spring season rice" | dcrop$d2_13e == "Upland rice2") & dcrop$d2_135 / dcrop$d2_132 > 1,
+                       dcrop$d2_135 / 10, dcrop$d2_135)
+dcrop$d2_136 <- ifelse((dcrop$d2_13e == "Summer-autumn season rice"| dcrop$d2_13e == "Winter-Spring season rice" | dcrop$d2_13e == "Upland rice2") & dcrop$d2_136 > dcrop$d2_135,
+                       dcrop$d2_135, dcrop$d2_136)
+dcrop$d2_135 <- ifelse(dcrop$d2_13e == "maize_hybrid" & dcrop$d2_135 / dcrop$d2_132 > 1,
+                       dcrop$d2_135 / 10, dcrop$d2_135)
+dcrop$d2_136 <- ifelse(dcrop$d2_13e == "maize_hybrid" & dcrop$d2_136 > dcrop$d2_135,
+                       dcrop$d2_135, dcrop$d2_136)
+dcrop$d2_134 <- ifelse((dcrop$d2_13e == "Summer-autumn season rice"| dcrop$d2_13e == "Winter-Spring season rice") & dcrop$d2_134 / dcrop$d2_132 > 0.07,
+                       dcrop$d2_134 / 10, dcrop$d2_134)
+dcrop$d2_134 <- ifelse((dcrop$d2_13e == "Summer-autumn season rice"| dcrop$d2_13e == "Winter-Spring season rice") & dcrop$d2_134 / dcrop$d2_132 > 0.02,
+                       dcrop$d2_134 / 2.5, dcrop$d2_134)
+dcrop$d2_135 <- ifelse(dcrop$d2_13e == "Maize (corn)" & dcrop$d2_135 / dcrop$d2_132 > 7,
+                       dcrop$d2_134 / 4, dcrop$d2_135)
+dcrop$d2_135 <- ifelse(dcrop$d2_13e == "Maize (corn)" & dcrop$d2_135 / dcrop$d2_132 > 3,
+                       dcrop$d2_134 / 2, dcrop$d2_135)
+dcrop$d2_136 <- ifelse(dcrop$d2_13e == "Maize (corn)" & dcrop$d2_136 > dcrop$d2_135,
+                       dcrop$d2_135, dcrop$d2_136)
 
+max(dcrop$d2_134[dcrop$d2_13e == "Summer-autumn season rice"], na.rm = T)
 #We remove country column (will be re-added later)
 dcrop <- dcrop[,-14]
 
@@ -1196,10 +1225,15 @@ AnimTotN <- AnimTotN %>% filter(!is.na(e4_1) & e4_1 != "")
 AnimTotN$e5_41 <- ifelse(AnimTotN$country_eng_preload == "Cambodia",round(AnimTotN$e5_41/4075, digits = 2),
                        ifelse(AnimTotN$country_eng_preload == "Lao", round(AnimTotN$e5_41/17110, digits = 2),
                               round(AnimTotN$e5_41/23452, digits = 2)))
-AnimTotN$e5_51 <- ifelse(AnimTotN$country_eng_preload == "Cambodia",round(AnimTotN$e5_41/4075, digits = 2),
-                         ifelse(AnimTotN$country_eng_preload == "Lao", round(AnimTotN$e5_41/17110, digits = 2),
-                                round(AnimTotN$e5_41/23452, digits = 2)))
-#Gross product not possible to be included for now as we don't know the amount of kg sold per animal
+AnimTotN$e5_51 <- ifelse(AnimTotN$country_eng_preload == "Cambodia",round(AnimTotN$e5_51/4075, digits = 2),
+                         ifelse(AnimTotN$country_eng_preload == "Lao", round(AnimTotN$e5_51/17110, digits = 2),
+                                round(AnimTotN$e5_51/23452, digits = 2)))
+#We try to correct prices based on kind of animal to evaluate gross product
+#summaryBy(e5_42 ~ e4_1+country_eng_preload, data = AnimTotN, FUN = c(mean, median, min, max, quantile), digits = 2, na.rm = T)
+#Dumm <- AnimTotN[AnimTotN$e4_1 == "Buffalo",c(1:2,11:13)]
+AnimTotN <- AnimTotN %>%
+  add_column("e5_43" = AnimTotN$e5_4 * AnimTotN$e5_41, .after = "e5_41")
+  
 #Data long to wide
 Animwide <- reshape(AnimTotN, direction = "wide", timevar = "e4_1", idvar = c("o9","country_eng_preload"))
 colnames(Animwide)[1] <- "hhid_re2"
@@ -1208,30 +1242,31 @@ Animwide <- Animwide[,-2]
 dcropwide6 <- full_join(dcropwide5,Animwide, by = "hhid_re2")
 #We add proper variable labels
 for (i in 0:10){
-  var_label(dcropwide6[,10762+24*i]) <- "Number of breeds"
-  var_label(dcropwide6[,10763+24*i]) <- "Local breeds"
-  var_label(dcropwide6[,10764+24*i]) <- "Number of local breeds"
-  var_label(dcropwide6[,10765+24*i]) <- "Nb dead animals - past year"
-  var_label(dcropwide6[,10766+24*i]) <- "Nb slaughter and self-consumed - past year"
-  var_label(dcropwide6[,10767+24*i]) <- "Nb given - past year"
-  var_label(dcropwide6[,10768+24*i]) <- "Nb sold - past year"
-  var_label(dcropwide6[,10769+24*i]) <- "Average selling price $/kg"
-  var_label(dcropwide6[,10770+24*i]) <- "????"
-  var_label(dcropwide6[,10771+24*i]) <- "Animals bought - past year"
-  var_label(dcropwide6[,10772+24*i]) <- "Average buying price $/kg"
-  var_label(dcropwide6[,10773+24*i]) <- "Amount kg/head sold - past year"
-  var_label(dcropwide6[,10774+24*i]) <- "Main outlet"
-  var_label(dcropwide6[,10775+24*i]) <- "Proportion sold to the main outlet"
-  var_label(dcropwide6[,10776+24*i]) <- "Provided by buyer - Nothing"
-  var_label(dcropwide6[,10777+24*i]) <- "Provided by buyer - Inputs (sold)"
-  var_label(dcropwide6[,10778+24*i]) <- "Provided by buyer - Inputs on credit"
-  var_label(dcropwide6[,10779+24*i]) <- "Provided by buyer - Cash credit"
-  var_label(dcropwide6[,10780+24*i]) <- "Provided by buyer - Technical advice/training"
-  var_label(dcropwide6[,10781+24*i]) <- "Provided by buyer - Market information"
-  var_label(dcropwide6[,10782+24*i]) <- "Provided by buyer - Regular sales"
-  var_label(dcropwide6[,10783+24*i]) <- "Provided by buyer - Other"
-  var_label(dcropwide6[,10784+24*i]) <- "Provided by buyer - Do not know"
-  var_label(dcropwide6[,10785+24*i]) <- "Contract with buyer ?"}
+  var_label(dcropwide6[,10762+25*i]) <- "Number of breeds"
+  var_label(dcropwide6[,10763+25*i]) <- "Local breeds"
+  var_label(dcropwide6[,10764+25*i]) <- "Number of local breeds"
+  var_label(dcropwide6[,10765+25*i]) <- "Do you cross local breeds with other breeds"
+  var_label(dcropwide6[,10766+25*i]) <- "Nb dead animals - past year"
+  var_label(dcropwide6[,10767+25*i]) <- "Nb slaughter and self-consumed - past year"
+  var_label(dcropwide6[,10768+25*i]) <- "Nb given - past year"
+  var_label(dcropwide6[,10769+25*i]) <- "Nb sold - past year"
+  var_label(dcropwide6[,10770+25*i]) <- "Average selling price $/kg"
+  var_label(dcropwide6[,10771+25*i]) <- "Gross product $/year"
+  var_label(dcropwide6[,10772+25*i]) <- "Amount kg/head sold - past year"
+  var_label(dcropwide6[,10773+25*i]) <- "Animals bought - past year"
+  var_label(dcropwide6[,10774+25*i]) <- "Average buying price $/kg"
+  var_label(dcropwide6[,10775+25*i]) <- "Amount kg/head bought - past year"
+  var_label(dcropwide6[,10776+25*i]) <- "Main outlet"
+  var_label(dcropwide6[,10777+25*i]) <- "Proportion sold to the main outlet"
+  var_label(dcropwide6[,10778+25*i]) <- "Provided by buyer - Nothing"
+  var_label(dcropwide6[,10779+25*i]) <- "Provided by buyer - Inputs (sold)"
+  var_label(dcropwide6[,10780+25*i]) <- "Provided by buyer - Inputs on credit"
+  var_label(dcropwide6[,10781+25*i]) <- "Provided by buyer - Cash credit"
+  var_label(dcropwide6[,10782+25*i]) <- "Provided by buyer - Technical advice/training"
+  var_label(dcropwide6[,10783+25*i]) <- "Provided by buyer - Market information"
+  var_label(dcropwide6[,10784+25*i]) <- "Provided by buyer - Regular sales"
+  var_label(dcropwide6[,10785+25*i]) <- "Provided by buyer - Other"
+  var_label(dcropwide6[,10786+25*i]) <- "Kind of contract"}
 }
 
 #b. Household scale
@@ -1734,6 +1769,12 @@ dcropwide9$province_eng_preload <- as.character(dcropwide9$province_eng_preload)
 dcropwide9 <- dcropwide9 %>% add_column("S_Area" = ifelse(dcropwide9$country_eng_preload == "Vietnam",
                                                                       dcropwide9$province_eng_preload,
                                                                       dcropwide9$country_eng_preload), .after = "hhid_re2")
+
+#We add the sampling weights
+dcropwide9 <- join(dcropwide9,SWeight, by = "village_eng_preload")
+dcropwide9$SW_Weight <- as.character(dcropwide9$SW_Weight)
+dcropwide9$SW_Weight <- as.numeric(dcropwide9$SW_Weight)
+
 #We remove hhid without area specified
 dcropwide9 <- dcropwide9[!is.na(dcropwide9$S_Area),]
 #We check data type for each variable
@@ -1754,4 +1795,5 @@ dcropwide9 <- labelled::copy_labels(SuppTot, dcropwide9)
 setwd("C:/Users/titou/OneDrive/Bureau/ASSET Stats/WORKDIRECTORY/2.ASSET_practices&Perf-Titouan2024/Data")
 saveRDS(dcropwide9, "Newdata_TF.rds")
 saveRDS(croplist, "croplist.rds")
-  
+
+

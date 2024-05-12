@@ -14,7 +14,6 @@ library(survey)
 #Options
 options(warn=1)
 
-2281
 
 #Work directory and data loading (for the 3  countries)
 #We use the output datasets which were displayed during previous mission
@@ -26,6 +25,10 @@ ClowlandCambodia_TF <- readRDS("ClowlandCambodia_TF.rds")
 CuplandCambodia_TF <- readRDS("CuplandCambodia_TF.rds")
 HouMemberCambodia_TF <- readRDS("HouMemberCambodia_TF.rds")
 HomegardenCambodia_TF <- readRDS("HomegardenCambodia_TF.rds")
+#One small correction
+HouseholdCambodia_TF$b5_1 <- ifelse(HouseholdCambodia_TF$b5_1 == 7, 70,HouseholdCambodia_TF$b5_1)
+
+
 #b. Laos
 HouseholdLaos_TF <- readRDS("HouseholdLaos_TF.rds")
 ClowlandLaos_TF <- readRDS("ClowlandLaos_TF.rds")
@@ -265,57 +268,57 @@ dcrop$d2_133 <- ifelse(dcrop$d2_13e == "Arrowroot, root", "Number of seedlings",
 dcrop$d2_133 <- ifelse(dcrop$d2_13e == "Chayote", "Number of seedlings", dcrop$d2_133)
 
 dcrop$d2_134 <- ifelse(dcrop$d2_13e == "lowlCucumber" & dcrop$country_eng_preload == "Lao" &
-                         dcrop$d2_134 < 10, dcrop$d2_134*10, dcrop$d2_134)
+                         dcrop$d2_134 < 10, NA, dcrop$d2_134)
 dcrop$d2_134 <- ifelse(dcrop$d2_13e == "Summer-autumn season rice" & dcrop$country_eng_preload == "Lao" &
-                         dcrop$d2_134 == 30000, dcrop$d2_134/10, dcrop$d2_134)
+                         dcrop$d2_134 == 30000, NA, dcrop$d2_134)
 dcrop$d2_134 <- ifelse(dcrop$d2_13e == "Summer-autumn season rice" & dcrop$country_eng_preload == "Lao" &
-                         dcrop$d2_134 > 9000, dcrop$d2_134/1000, dcrop$d2_134)
+                         dcrop$d2_134 > 9000, NA, dcrop$d2_134)
 dcrop$d2_134 <- ifelse(dcrop$d2_13e == "Summer-autumn season rice" & dcrop$country_eng_preload == "Lao" &
-                         dcrop$d2_134 > 1000, dcrop$d2_134/10, dcrop$d2_134)
+                         dcrop$d2_134 > 1000, NA, dcrop$d2_134)
 dcrop$d2_134 <- ifelse(dcrop$d2_13e == "maize_hybrid" & dcrop$d2_133 == "Number of seedlings",
-                       dcrop$d2_134*10, dcrop$d2_134)
+                       NA, dcrop$d2_134)
 dcrop$d2_134 <- ifelse(dcrop$d2_13e == "maize_hybrid" & dcrop$d2_133 == "Kg of seed" & dcrop$d2_134 > 200,
-                       dcrop$d2_134/100, dcrop$d2_134)
+                       NA, dcrop$d2_134)
 dcrop$d2_134 <- ifelse(dcrop$d2_13e == "Mung bean" & dcrop$country_eng_preload == "Lao",
                        dcrop$d2_134*10, dcrop$d2_134)
 dcrop$d2_134 <- ifelse(dcrop$d2_13e == "lowlGarlic" & dcrop$country_eng_preload == "Lao" &
-                         dcrop$d2_134 > 1000, dcrop$d2_134/100, dcrop$d2_134)
+                         dcrop$d2_134 > 1000, NA, dcrop$d2_134)
 dcrop$d2_134 <- ifelse(dcrop$d2_13e == "lowlGinger", dcrop$d2_134*1000, dcrop$d2_134)
 dcrop$d2_134 <- ifelse(dcrop$d2_13e == "lowlWinter melon" & dcrop$d2_133 == "Gr of seed",
-                       dcrop$d2_134/10, dcrop$d2_134)
+                       NA, dcrop$d2_134)
 dcrop$d2_133 <- ifelse(dcrop$d2_13e == "lowlWinter melon", "Kg of seed", dcrop$d2_133)
 dcrop$d2_134 <- ifelse(dcrop$d2_13e == "lowlWinter melon", dcrop$d2_134/10, dcrop$d2_134)
-dcrop$d2_135 <- ifelse(dcrop$pid == "3552 2", 20, dcrop$d2_135) 
-dcrop$d2_135 <- ifelse(dcrop$pid == "589 3", 1000, dcrop$d2_135) 
-dcrop$d2_135 <- ifelse(dcrop$pid == "642 3", 800, dcrop$d2_135) 
+dcrop$d2_135 <- ifelse(dcrop$pid == "3552 2", NA, dcrop$d2_135) 
+dcrop$d2_135 <- ifelse(dcrop$pid == "589 3", NA, dcrop$d2_135) 
+dcrop$d2_135 <- ifelse(dcrop$pid == "642 3", NA, dcrop$d2_135) 
 dcrop$d2_132 <- ifelse(dcrop$d2_13e == "lowlCoriander" & dcrop$country_eng_preload == "Vietnam",
-                          dcrop$d2_132*10, dcrop$d2_132)
+                       dcrop$d2_132*10, dcrop$d2_132)
 dcrop$d2_132 <- ifelse(dcrop$d2_13e == "uplnPeanut" &
-                         dcrop$d2_132 == 50000, dcrop$d2_132/10, dcrop$d2_132)
+                         dcrop$d2_132 == 50000, NA, dcrop$d2_132)
 dcrop$d2_132 <- ifelse(dcrop$d2_13e == "uplnPeanut" &
-                         dcrop$d2_132 < 1000, dcrop$d2_132*10, dcrop$d2_132)
+                         dcrop$d2_132 < 1000, NA, dcrop$d2_132)
 dcrop$d2_132 <- ifelse(dcrop$d2_13e == "Hmong mustard" &
-                         dcrop$d2_132 < 100, dcrop$d2_132*10, dcrop$d2_132)
+                         dcrop$d2_132 < 100, NA, dcrop$d2_132)
 dcrop$d2_136 <- ifelse(dcrop$d2_136 > dcrop$d2_135, dcrop$d2_135, dcrop$d2_136)
 #Correction #3
 dcrop$d2_135 <- ifelse((dcrop$d2_13e == "Summer-autumn season rice"| dcrop$d2_13e == "Winter-Spring season rice" | dcrop$d2_13e == "maize_hybrid") & dcrop$d2_135 / dcrop$d2_132 > 4,
-                       dcrop$d2_135 / 100, dcrop$d2_135)
+                       NA, dcrop$d2_135)
 dcrop$d2_135 <- ifelse((dcrop$d2_13e == "Summer-autumn season rice"| dcrop$d2_13e == "Winter-Spring season rice" | dcrop$d2_13e == "Upland rice2") & dcrop$d2_135 / dcrop$d2_132 > 1,
-                       dcrop$d2_135 / 10, dcrop$d2_135)
+                       NA, dcrop$d2_135)
 dcrop$d2_136 <- ifelse((dcrop$d2_13e == "Summer-autumn season rice"| dcrop$d2_13e == "Winter-Spring season rice" | dcrop$d2_13e == "Upland rice2") & dcrop$d2_136 > dcrop$d2_135,
                        dcrop$d2_135, dcrop$d2_136)
 dcrop$d2_135 <- ifelse(dcrop$d2_13e == "maize_hybrid" & dcrop$d2_135 / dcrop$d2_132 > 1,
-                       dcrop$d2_135 / 10, dcrop$d2_135)
+                       NA, dcrop$d2_135)
 dcrop$d2_136 <- ifelse(dcrop$d2_13e == "maize_hybrid" & dcrop$d2_136 > dcrop$d2_135,
                        dcrop$d2_135, dcrop$d2_136)
 dcrop$d2_134 <- ifelse((dcrop$d2_13e == "Summer-autumn season rice"| dcrop$d2_13e == "Winter-Spring season rice") & dcrop$d2_134 / dcrop$d2_132 > 0.07,
-                       dcrop$d2_134 / 10, dcrop$d2_134)
+                       NA, dcrop$d2_134)
 dcrop$d2_134 <- ifelse((dcrop$d2_13e == "Summer-autumn season rice"| dcrop$d2_13e == "Winter-Spring season rice") & dcrop$d2_134 / dcrop$d2_132 > 0.02,
-                       dcrop$d2_134 / 2.5, dcrop$d2_134)
+                       NA, dcrop$d2_134)
 dcrop$d2_135 <- ifelse(dcrop$d2_13e == "Maize (corn)" & dcrop$d2_135 / dcrop$d2_132 > 7,
-                       dcrop$d2_134 / 4, dcrop$d2_135)
+                       NA, dcrop$d2_135)
 dcrop$d2_135 <- ifelse(dcrop$d2_13e == "Maize (corn)" & dcrop$d2_135 / dcrop$d2_132 > 3,
-                       dcrop$d2_134 / 2, dcrop$d2_135)
+                       NA, dcrop$d2_135)
 dcrop$d2_136 <- ifelse(dcrop$d2_13e == "Maize (corn)" & dcrop$d2_136 > dcrop$d2_135,
                        dcrop$d2_135, dcrop$d2_136)
 

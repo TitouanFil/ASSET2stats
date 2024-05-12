@@ -440,6 +440,7 @@ Cropsyssum$Production.for.consumption.kg.ABS.Rice[Cropsyssum$Cropsys == "Summer-
 Cropsyssum$Production.for.consumption.kg.ABS.Fruits.vegetables.etc <-
   ifelse(!is.nan(Cropsyssum$Production.for.consumption.kg.ABS.Fruits.vegetables.etc),
        Cropsyssum$Production.for.consumption.kg.ABS.Fruits.vegetables.etc,0)
+Cropsyssum$Average.nb.of.plant.species.included <- as.numeric(Cropsyssum$Average.nb.of.plant.species.included)
 Cropsyssum$Production.for.consumption.kg.ABS.Fruits.vegetables.etc <-
   Cropsyssum$Production.for.consumption.kg.ABS.Fruits.vegetables.etc*
   Cropsyssum$Average.nb.of.plant.species.included

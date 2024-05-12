@@ -21,10 +21,6 @@ CropSystems3C_TF <- readRDS("Newdata_TF.rds")
 animallist <- c("Cattle","Pig","Duck or/and Muscovy","Chicken","Buffalo","Horse",
                 "Other poultry","Goat","Other cattle","Goose","Rabbit")
 
-CambBuff <- CropSystems3C_TF[CropSystems3C_TF$S_Area == "Cambodia" &
-                               !is.na(CropSystems3C_TF$e3_1),]
-CambBuff <- labelled::copy_labels(CropSystems3C_TF,CambBuff)
-
 ## d - Lists
 {
   Sarealist <- c("Cambodia", "Lao", "Dien Bien province", "Son La province")
